@@ -54,3 +54,41 @@ py -3.11 read_cnibe_safe.py --doc 100689622 --dob 08/09/1978 --doe 20/04/2026
 | **EF.DG1** | MRZ TD1 (3 lignes x 30 car.) : N° Document, Date Naissance, Date Expiration, Sexe, Nationalité, Nom et Prénoms latins |
 | **EF.DG2** | Photo biométrique faciale complète (détection JPEG / JPEG2000, enregistrée dans `photo.jpg`) |
 | **EF.DG11** | Détails personnels étendus avec décodage **ISO-8859-6** pour l'arabe :<br>• `0x5F0E` : Nom (Latin & Arabe)<br>• `0x5F0F` : Prénom (Latin & Arabe)<br>• `0x5F10` : NIN (18 chiffres)<br>• `0x5F11` : Lieu de naissance (Latin & Arabe)<br>• `0x5F42` : Sexe & Groupe Sanguin |
+| **EF.DG12** | Détails document : Autorité d'émission (Latin & Arabe), date d'émission |
+| **EF.DG7**  | Signature manuscrite numérisée (enregistrée dans `signature.jpg`) |
+
+---
+
+## 🌐 Architecture Réseau Client / Serveur Flask (LAN)
+
+Dans un environnement réseau d'entreprise :
+- **Le lecteur NFC USB** est branché sur le **PC Client** (poste de travail de l'opérateur).
+- **L'application Flask** tourne sur le **Serveur LAN** (ex: `http://192.168.1.50:5000`).
+- **L'opérateur** ouvre son navigateur web et accède à l'application.
+
+```
+[ POSTE CLIENT (Opérateur) ]                       [ SERVEUR DISTANT (LAN) ]
+  ├── Lecteur NFC USB (Identiv)                      ├── Application Flask (0.0.0.0:5000)
+  ├── cnibe_agent.py (127.0.0.1:5001)                 └── Base de données / Métier
+  └── Navigateur Web (Chrome/Edge)
+        │
+        ├── 1. fetch("http://127.0.0.1:5001/scan")  -> Lecture NFC directe du lecteur client
+        │
+        └── 2. fetch("/api/save_card", POST)        -> Enregistrement centralisé sur le serveur Flask
+```
+
+### Démarrage Rapide
+
+1. **Sur le Poste Client (où est le lecteur USB) :**
+   Double-cliquez sur `lancer_agent_client.bat` (ou lancez `py -3.11 cnibe_agent.py`).
+   L'agent écoute sur `http://127.0.0.1:5001`.
+
+2. **Sur le Serveur LAN :**
+   Double-cliquez sur `lancer_serveur_test.bat` (ou lancez `py -3.11 server_minimal.py`).
+   Le serveur affiche son adresse IP sur le LAN (ex: `http://192.168.1.50:5000`).
+
+3. **Depuis le Navigateur du Client :**
+   Ouvrez `http://192.168.1.50:5000` (ou `http://127.0.0.1:5000` en test local).
+   L'interface web détecte immédiatement votre lecteur et votre carte en temps réel !
+   Cliquez sur **Lire la Carte (NFC)** pour extraire l'identité complète avec photo et signature, et l'enregistrer sur le serveur.
+

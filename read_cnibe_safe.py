@@ -17,6 +17,7 @@ import os
 import re
 import json
 import time
+import base64
 import hashlib
 import argparse
 from typing import Optional, Tuple, List, Dict, Any
@@ -49,6 +50,7 @@ try:
         SCardBeginTransaction,
         SCardEndTransaction,
         SCARD_LEAVE_CARD,
+        SCARD_RESET_CARD,
         SCARD_SHARE_EXCLUSIVE,
         SCARD_S_SUCCESS
     )
@@ -1180,8 +1182,233 @@ def run_self_tests() -> bool:
 
 
 # ==============================================================================
-# 9. FLUX PRINCIPAL D'EXÉCUTION
+# 9. FONCTION PROGRAMMATIQUE DE LECTURE CARTE & FLUX PRINCIPAL
 # ==============================================================================
+
+def read_cnibe_card(
+    doc: str,
+    dob: str,
+    doe: str,
+    reader: Optional[str] = None,
+    photo_dest: str = "photo.jpg",
+    signature_dest: str = "signature.jpg",
+    wait_seconds: int = 15,
+    debug: bool = False,
+    include_base64: bool = True
+) -> Dict[str, Any]:
+    """
+    Lit une carte CNIBE de manière ultra-sécurisée et retourne les données extraites sous forme de dictionnaire.
+    Lève une exception (SecurityException, CardConnectionException, etc.) en cas d'échec.
+    """
+    yymmdd_dob = normalize_date_to_yymmdd(dob)
+    yymmdd_doe = normalize_date_to_yymmdd(doe)
+
+    raw_doc = doc.strip().upper()
+    if len(raw_doc) == 10:
+        candidate_doc = raw_doc[:9]
+        expected_cd = calc_check_digit(candidate_doc)
+        if raw_doc[9] == expected_cd:
+            doc_norm = candidate_doc
+        else:
+            doc_norm = candidate_doc
+    else:
+        doc_norm = raw_doc[:9].ljust(9, '<')
+
+    print(f"[*] Paramètres de dérivation BAC :")
+    print(f"    - N° Document : {doc_norm}")
+    print(f"    - Date Naiss. : {yymmdd_dob}")
+    print(f"    - Date Expir. : {yymmdd_doe}")
+
+    guard = PassiveSafetyGuard()
+
+    # Sélection du lecteur
+    target_reader = get_best_reader(reader)
+    print(f"[*] Lecteur sélectionné : {target_reader}")
+
+    # Connexion à la carte
+    connection = target_reader.createConnection()
+    card_connected = False
+    start_wait = time.time()
+
+    print(f"[*] Déposez votre carte d'identité (CNIBE) sur le lecteur NFC...")
+    while (time.time() - start_wait) < wait_seconds:
+        try:
+            if HAS_SCARD_TRANSACTION:
+                try:
+                    connection.connect(mode=SCARD_SHARE_EXCLUSIVE)
+                    card_connected = True
+                    break
+                except Exception:
+                    pass
+            connection.connect()
+            card_connected = True
+            break
+        except (NoCardException, CardConnectionException):
+            time.sleep(0.3)
+        except Exception:
+            time.sleep(0.3)
+
+    if not card_connected:
+        raise NoCardException(f"Aucune carte détectée sur le lecteur après {wait_seconds}s d'attente.")
+
+    in_transaction = False
+    inner_conn = getattr(connection, 'component', connection)
+    hcard = getattr(inner_conn, 'hcard', None)
+
+    try:
+        # Verrouillage exclusif PC/SC pour empêcher les services Windows (CertPropSvc, Hello) d'interférer
+        if HAS_SCARD_TRANSACTION and hcard is not None:
+            try:
+                hres = SCardBeginTransaction(hcard)
+                if hres == SCARD_S_SUCCESS:
+                    in_transaction = True
+            except Exception:
+                pass
+
+        atr = bytes(connection.getATR()).hex().upper()
+        print(f"[*] Carte connectée. ATR : {atr}")
+        if in_transaction:
+            print("[*] Canal PC/SC verrouillé en exclusivité (protection anti-interférence Windows active).")
+        time.sleep(0.15)
+
+        # 1. Sélection de l'application ICAO AID
+        print("[*] Sélection de l'application ICAO eMRTD (AID A0 00 00 02 47 10 01)...")
+        select_icao_application(connection, guard)
+
+        # 2. Authentification BAC
+        print("[*] Exécution du protocole BAC (Basic Access Control)...")
+        sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
+        guard.bac_succeeded = True
+        print("[+] Authentification BAC réussie ! Canal Secure Messaging établi.")
+
+        result_data: Dict[str, Any] = {
+            "status": "SUCCESS",
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+        def refresh_sm():
+            """Restaure automatiquement le canal Secure Messaging en cas de micro-coupure RF transitoire."""
+            nonlocal sm_session
+            time.sleep(0.12)
+            select_icao_application(connection, guard)
+            sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
+            guard.bac_succeeded = True
+
+        def read_file_safe(fid_bytes: bytes, desc: str) -> Optional[bytes]:
+            """Lit un fichier élémentaire avec récupération automatique transparente en cas de coupure NFC."""
+            nonlocal sm_session
+            for attempt in range(2):
+                try:
+                    return read_elementary_file(sm_session, fid_bytes)
+                except (CardConnectionException, NoCardException):
+                    raise
+                except Exception as e:
+                    if attempt == 0:
+                        print(f"[*] Micro-coupure NFC lors de {desc}. Restauration du canal sécurisé...", file=sys.stderr)
+                        try:
+                            refresh_sm()
+                            print(f"[+] Canal restauré avec succès ! Reprise de la lecture de {desc}...")
+                            continue
+                        except Exception as err_re:
+                            print(f"[!] Échec restauration canal : {err_re}", file=sys.stderr)
+                    print(f"[!] Erreur lecture {desc} : {e}", file=sys.stderr)
+                    return None
+            return None
+
+        # 3. Lecture EF.COM (FID 011E)
+        print("[*] Lecture EF.COM (Data Groups disponibles)...")
+        ef_com_bytes = read_file_safe(bytes.fromhex("011E"), "EF.COM")
+        if ef_com_bytes:
+            dgs = parse_ef_com(ef_com_bytes)
+            result_data["data_groups_disponibles"] = dgs
+            print(f"[+] Data Groups détectés : {dgs}")
+        else:
+            # Liste par défaut si EF.COM est manquant
+            result_data["data_groups_disponibles"] = ['DG1 (MRZ TD1)', 'DG2 (Photo Biométrique)', 'DG7 (Signature Numérisée)', 'DG11 (Détails Personnels Étendus)', 'DG12 (Détails Document)']
+
+        time.sleep(0.04)
+
+        # 4. Lecture EF.DG1 (FID 0101 - MRZ TD1)
+        print("[*] Lecture EF.DG1 (MRZ TD1 & Données d'identité)...")
+        ef_dg1_bytes = read_file_safe(bytes.fromhex("0101"), "EF.DG1")
+        if ef_dg1_bytes:
+            dg1_info = parse_ef_dg1(ef_dg1_bytes)
+            result_data["dg1_mrz"] = dg1_info
+            print(f"[+] Données DG1 extraites avec succès.")
+
+        time.sleep(0.04)
+
+        # 5. Lecture EF.DG11 (FID 010B - Détails Personnels Étendus & Arabe)
+        print("[*] Lecture EF.DG11 (Détails étendus, NIN & Arabe ISO-8859-6)...")
+        ef_dg11_bytes = read_file_safe(bytes.fromhex("010B"), "EF.DG11")
+        if ef_dg11_bytes:
+            dg11_info = parse_ef_dg11(ef_dg11_bytes)
+            result_data["dg11_personnel"] = dg11_info
+            print(f"[+] Données étendues DG11 extraites avec succès.")
+
+        time.sleep(0.04)
+
+        # 6. Lecture EF.DG12 (FID 010C - Détails Document & Délivrance)
+        print("[*] Lecture EF.DG12 (Détails document, autorité & émission)...")
+        ef_dg12_bytes = read_file_safe(bytes.fromhex("010C"), "EF.DG12")
+        if ef_dg12_bytes:
+            dg12_info = parse_ef_dg12(ef_dg12_bytes)
+            result_data["dg12_document"] = dg12_info
+            print(f"[+] Données document DG12 extraites avec succès.")
+
+        time.sleep(0.04)
+
+        # 7. Lecture EF.DG2 (FID 0102 - Photo Biométrique)
+        print("[*] Lecture EF.DG2 (Photo faciale biométrique)...")
+        ef_dg2_bytes = read_file_safe(bytes.fromhex("0102"), "EF.DG2")
+        if ef_dg2_bytes:
+            photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest)
+            if photo_info:
+                result_data["photo"] = photo_info
+                if include_base64 and os.path.exists(photo_dest):
+                    try:
+                        with open(photo_dest, "rb") as pf:
+                            result_data["photo"]["base64"] = base64.b64encode(pf.read()).decode("ascii")
+                    except Exception:
+                        pass
+                print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_dest}")
+        else:
+            print("[!] Photo non extraite de DG2.")
+
+        time.sleep(0.04)
+
+        # 8. Lecture EF.DG7 (FID 0107 - Signature Manuscrite Numérisée)
+        print("[*] Lecture EF.DG7 (Signature manuscrite numérisée)...")
+        ef_dg7_bytes = read_file_safe(bytes.fromhex("0107"), "EF.DG7")
+        if ef_dg7_bytes:
+            sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest)
+            if sig_info:
+                result_data["signature"] = sig_info
+                if include_base64 and os.path.exists(signature_dest):
+                    try:
+                        with open(signature_dest, "rb") as sf:
+                            result_data["signature"]["base64"] = base64.b64encode(sf.read()).decode("ascii")
+                    except Exception:
+                        pass
+                print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {signature_dest}")
+
+        return result_data
+
+    finally:
+        if in_transaction and hcard is not None:
+            try:
+                # Reset chaud de la puce pour libérer l'état de session et préparer proprement le prochain scan
+                SCardEndTransaction(hcard, SCARD_RESET_CARD)
+            except Exception:
+                try:
+                    SCardEndTransaction(hcard, SCARD_LEAVE_CARD)
+                except Exception:
+                    pass
+        try:
+            connection.disconnect()
+        except Exception:
+            pass
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -1211,228 +1438,19 @@ def main():
         sys.exit(1)
 
     try:
-        yymmdd_dob = normalize_date_to_yymmdd(args.dob)
-        yymmdd_doe = normalize_date_to_yymmdd(args.doe)
-    except ValueError as e:
-        print(f"[ERREUR] {e}", file=sys.stderr)
-        sys.exit(1)
+        result_data = read_cnibe_card(
+            doc=args.doc,
+            dob=args.dob,
+            doe=args.doe,
+            reader=args.reader,
+            photo_dest=args.photo,
+            signature_dest=args.signature,
+            wait_seconds=args.wait,
+            debug=args.debug,
+            include_base64=False
+        )
 
-    raw_doc = args.doc.strip().upper()
-    if len(raw_doc) == 10:
-        candidate_doc = raw_doc[:9]
-        expected_cd = calc_check_digit(candidate_doc)
-        if raw_doc[9] == expected_cd:
-            print(f"[*] Note : 10 caractères saisis. Le 10ème caractère '{raw_doc[9]}' correspond au check digit MRZ.")
-            doc_norm = candidate_doc
-        else:
-            print(f"[!] Avertissement : 10 caractères saisis ({raw_doc}). Le numéro de document officiel comporte 9 caractères.")
-            print(f"    (Pour le numéro '{candidate_doc}', le check digit MRZ attendu est '{expected_cd}', mais vous avez saisi '{raw_doc[9]}').")
-            doc_norm = candidate_doc
-    else:
-        doc_norm = raw_doc[:9].ljust(9, '<')
-
-    print(f"[*] Paramètres de dérivation BAC :")
-    print(f"    - N° Document : {doc_norm}")
-    print(f"    - Date Naiss. : {yymmdd_dob}")
-    print(f"    - Date Expir. : {yymmdd_doe}")
-
-    guard = PassiveSafetyGuard()
-
-    # Sélection du lecteur
-    try:
-        reader = get_best_reader(args.reader)
-    except Exception as e:
-        print(f"[ERREUR LECTEUR] {e}", file=sys.stderr)
-        sys.exit(1)
-
-    print(f"[*] Lecteur sélectionné : {reader}")
-
-    # Connexion à la carte
-    connection = reader.createConnection()
-    card_connected = False
-    start_wait = time.time()
-
-    print(f"[*] Déposez votre carte d'identité (CNIBE) sur le lecteur NFC...")
-    while (time.time() - start_wait) < args.wait:
-        try:
-            if HAS_SCARD_TRANSACTION:
-                try:
-                    connection.connect(mode=SCARD_SHARE_EXCLUSIVE)
-                    card_connected = True
-                    break
-                except Exception:
-                    pass
-            connection.connect()
-            card_connected = True
-            break
-        except (NoCardException, CardConnectionException):
-            time.sleep(0.3)
-        except Exception:
-            time.sleep(0.3)
-
-    if not card_connected:
-        print(f"[ERREUR] Aucune carte détectée sur le lecteur après {args.wait} secondes d'attente.", file=sys.stderr)
-        print("Veuillez vérifier que la carte est bien plaquée contre la cible NFC du lecteur.", file=sys.stderr)
-        sys.exit(1)
-
-    in_transaction = False
-    inner_conn = getattr(connection, 'component', connection)
-    hcard = getattr(inner_conn, 'hcard', None)
-
-    try:
-        # Verrouillage exclusif PC/SC pour empêcher les services Windows (CertPropSvc, Hello) d'interférer
-        if HAS_SCARD_TRANSACTION and hcard is not None:
-            try:
-                hres = SCardBeginTransaction(hcard)
-                if hres == SCARD_S_SUCCESS:
-                    in_transaction = True
-            except Exception:
-                pass
-
-        atr = bytes(connection.getATR()).hex().upper()
-        print(f"[*] Carte connectée. ATR : {atr}")
-        if in_transaction:
-            print("[*] Canal PC/SC verrouillé en exclusivité (protection anti-interférence Windows active).")
-        time.sleep(0.15)
-
-        # 1. Sélection de l'application ICAO AID
-        print("[*] Sélection de l'application ICAO eMRTD (AID A0 00 00 02 47 10 01)...")
-        select_icao_application(connection, guard)
-
-        # 2. Authentification BAC
-        print("[*] Exécution du protocole BAC (Basic Access Control)...")
-        sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=args.debug)
-        guard.bac_succeeded = True
-        print("[+] Authentification BAC réussie ! Canal Secure Messaging établi.")
-
-        result_data: Dict[str, Any] = {
-            "status": "SUCCESS",
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-        # 3. Lecture EF.COM (FID 011E)
-        try:
-            print("[*] Lecture EF.COM (Data Groups disponibles)...")
-            ef_com_bytes = read_elementary_file(sm_session, bytes.fromhex("011E"))
-            dgs = parse_ef_com(ef_com_bytes)
-            result_data["data_groups_disponibles"] = dgs
-            print(f"[+] Data Groups détectés : {dgs}")
-        except (CardConnectionException, NoCardException):
-            raise
-        except Exception as e:
-            if "Communication perdue" in str(e):
-                raise
-            print(f"[!] Erreur lecture EF.COM : {e}", file=sys.stderr)
-
-        time.sleep(0.04)
-
-        # 4. Lecture EF.DG1 (FID 0101 - MRZ TD1)
-        try:
-            print("[*] Lecture EF.DG1 (MRZ TD1 & Données d'identité)...")
-            ef_dg1_bytes = read_elementary_file(sm_session, bytes.fromhex("0101"))
-            dg1_info = parse_ef_dg1(ef_dg1_bytes)
-            result_data["dg1_mrz"] = dg1_info
-            print(f"[+] Données DG1 extraites avec succès.")
-        except (CardConnectionException, NoCardException):
-            raise
-        except Exception as e:
-            if "Communication perdue" in str(e):
-                raise
-            print(f"[!] Erreur lecture EF.DG1 : {e}", file=sys.stderr)
-
-        time.sleep(0.04)
-
-        # 5. Lecture EF.DG11 (FID 010B - Détails Personnels Étendus & Arabe)
-        try:
-            print("[*] Lecture EF.DG11 (Détails étendus, NIN & Arabe ISO-8859-6)...")
-            ef_dg11_bytes = read_elementary_file(sm_session, bytes.fromhex("010B"))
-            dg11_info = parse_ef_dg11(ef_dg11_bytes)
-            result_data["dg11_personnel"] = dg11_info
-            print(f"[+] Données étendues DG11 extraites avec succès.")
-        except (CardConnectionException, NoCardException):
-            raise
-        except Exception as e:
-            print(f"[!] Erreur lecture EF.DG11 : {e}", file=sys.stderr)
-
-        time.sleep(0.04)
-
-        # 6. Lecture EF.DG12 (FID 010C - Détails Document & Délivrance) si présent
-        if any("DG12" in d for d in result_data.get("data_groups_disponibles", [])):
-            try:
-                print("[*] Lecture EF.DG12 (Détails document, autorité & émission)...")
-                ef_dg12_bytes = read_elementary_file(sm_session, bytes.fromhex("010C"))
-                dg12_info = parse_ef_dg12(ef_dg12_bytes)
-                result_data["dg12_document"] = dg12_info
-                print(f"[+] Données document DG12 extraites avec succès.")
-            except (CardConnectionException, NoCardException):
-                raise
-            except Exception as e:
-                print(f"[!] Info DG12 non disponible : {e}", file=sys.stderr)
-
-            time.sleep(0.04)
-
-        def refresh_sm():
-            nonlocal sm_session
-            time.sleep(0.12)
-            select_icao_application(connection, guard)
-            sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=args.debug)
-            guard.bac_succeeded = True
-
-        # 7. Lecture EF.DG2 (FID 0102 - Photo Biométrique)
-        for attempt_dg2 in range(2):
-            try:
-                print("[*] Lecture EF.DG2 (Photo faciale biométrique)...")
-                ef_dg2_bytes = read_elementary_file(sm_session, bytes.fromhex("0102"))
-                photo_info = extract_ef_dg2_photo(ef_dg2_bytes, args.photo)
-                if photo_info:
-                    result_data["photo"] = photo_info
-                    print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {args.photo}")
-                else:
-                    print("[!] Image non détectée dans DG2.")
-                break
-            except (CardConnectionException, NoCardException):
-                raise
-            except Exception as e:
-                if attempt_dg2 == 0:
-                    print(f"[*] Micro-coupure NFC détectée. Restauration automatique du canal sécurisé...", file=sys.stderr)
-                    try:
-                        refresh_sm()
-                        print("[+] Canal restauré avec succès ! Reprise de la lecture photo...")
-                        continue
-                    except Exception as err_re:
-                        print(f"[!] Échec restauration canal : {err_re}", file=sys.stderr)
-                print(f"[!] Erreur lecture EF.DG2 : {e}", file=sys.stderr)
-
-        time.sleep(0.06)
-
-        # 8. Lecture EF.DG7 (FID 0107 - Signature Manuscrite Numérisée) si présent
-        if any("DG7" in d or "0x67" in d for d in result_data.get("data_groups_disponibles", [])):
-            for attempt_dg7 in range(2):
-                try:
-                    print("[*] Lecture EF.DG7 (Signature manuscrite numérisée)...")
-                    ef_dg7_bytes = read_elementary_file(sm_session, bytes.fromhex("0107"))
-                    sig_info = extract_ef_dg7_signature(ef_dg7_bytes, args.signature)
-                    if sig_info:
-                        result_data["signature"] = sig_info
-                        print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {args.signature}")
-                    else:
-                        print("[!] Image de signature non détectée dans DG7.")
-                    break
-                except (CardConnectionException, NoCardException):
-                    raise
-                except Exception as e:
-                    if attempt_dg7 == 0:
-                        try:
-                            refresh_sm()
-                            print("[+] Canal restauré avec succès ! Reprise de la signature...")
-                            continue
-                        except Exception:
-                            pass
-                    print(f"[!] Signature DG7 non disponible : {e}", file=sys.stderr)
-
-            time.sleep(0.04)
-
-        # 7. Affichage et export JSON
+        # Affichage et export JSON
         json_output = json.dumps(result_data, ensure_ascii=False, indent=2)
         print("\n" + "=" * 70)
         print("RÉSULTAT DE LECTURE CNIBE (JSON) :")
@@ -1459,16 +1477,6 @@ def main():
             sys.exit(3)
         print(f"\n[ERREUR IMPRÉVUE] {e}", file=sys.stderr)
         sys.exit(4)
-    finally:
-        if in_transaction and hcard is not None:
-            try:
-                SCardEndTransaction(hcard, SCARD_LEAVE_CARD)
-            except Exception:
-                pass
-        try:
-            connection.disconnect()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

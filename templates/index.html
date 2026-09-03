@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>CNIBE Reader - Portail Web Client/Serveur</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-primary: #0b0f19;
+            --bg-card: #151d30;
+            --bg-card-hover: #1c2742;
+            --bg-input: #0e1626;
+            --border-color: #24324f;
+            --border-focus: #3b82f6;
+            --text-primary: #f8fafc;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #2563eb;
+            --accent-cyan: #06b6d4;
+            --accent-emerald: #10b981;
+            --accent-amber: #f59e0b;
+            --accent-rose: #f43f5e;
+            --radius-md: 10px;
+            --radius-lg: 16px;
+            --shadow-card: 0 10px 25px -5px rgba(0, 0, 0, 0.5), 0 8px 10px -6px rgba(0, 0, 0, 0.5);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            padding: 24px;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* En-tête */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--border-color);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .brand-logo {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #1e3a8a, #0284c7);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 26px;
+            box-shadow: 0 0 20px rgba(2, 132, 199, 0.4);
+        }
+
+        .brand-text h1 {
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+            color: #fff;
+        }
+
+        .brand-text h2 {
+            font-family: 'Cairo', sans-serif;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            direction: rtl;
+        }
+
+        /* Barre d'état */
+        .status-bar {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+        }
+
+        .status-pill {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 9999px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: all 0.3s;
+        }
+
+        .status-dot.online {
+            background: var(--accent-emerald);
+            box-shadow: 0 0 10px var(--accent-emerald);
+        }
+
+        .status-dot.offline {
+            background: var(--accent-rose);
+            box-shadow: 0 0 10px var(--accent-rose);
+        }
+
+        .status-dot.warning {
+            background: var(--accent-amber);
+            box-shadow: 0 0 10px var(--accent-amber);
+        }
+
+        /* Grille principale */
+        .main-grid {
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            gap: 24px;
+        }
+
+        @media (max-width: 992px) {
+            .main-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* Cartes & Panneaux */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* Formulaires */
+        .form-group {
+            margin-bottom: 16px;
+        }
+
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .form-control {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: #fff;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.2s;
+        }
+
+        .form-control:focus {
+            outline: none;
+            border-color: var(--border-focus);
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+
+        .form-control[readonly] {
+            background: #090e1a;
+            color: #cbd5e1;
+            cursor: default;
+        }
+
+        .arabic-text {
+            font-family: 'Cairo', sans-serif;
+            font-size: 15px;
+            direction: rtl;
+            text-align: right;
+            font-weight: 600;
+        }
+
+        /* Boutons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 12px 20px;
+            border-radius: var(--radius-md);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #2563eb, #0284c7);
+            color: #fff;
+            box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3);
+        }
+
+        .btn-primary:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(37, 99, 235, 0.45);
+        }
+
+        .btn-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #1e293b;
+            color: var(--text-secondary);
+            margin-top: 10px;
+            border: 1px solid var(--border-color);
+        }
+
+        .btn-secondary:hover {
+            background: #334155;
+            color: #fff;
+        }
+
+        /* Progress Bar & Loader */
+        .progress-box {
+            display: none;
+            margin-top: 16px;
+            padding: 14px;
+            background: #0f172a;
+            border-radius: var(--radius-md);
+            border: 1px solid #1e293b;
+        }
+
+        .progress-status {
+            font-size: 13px;
+            color: var(--accent-cyan);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .progress-bar-bg {
+            height: 6px;
+            background: #1e293b;
+            border-radius: 9999px;
+            overflow: hidden;
+        }
+
+        .progress-bar-fill {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #3b82f6, #06b6d4);
+            border-radius: 9999px;
+            transition: width 0.3s;
+            animation: pulse-glow 1.5s infinite;
+        }
+
+        @keyframes pulse-glow {
+            0% { opacity: 0.8; }
+            50% { opacity: 1; }
+            100% { opacity: 0.8; }
+        }
+
+        /* Affichage de la carte d'identité */
+        .identity-header {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+        }
+
+        .photos-column {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            align-items: center;
+        }
+
+        .photo-card {
+            width: 140px;
+            height: 180px;
+            background: #090e1a;
+            border: 2px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+        }
+
+        .photo-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+
+        .photo-placeholder {
+            font-size: 40px;
+            color: var(--text-muted);
+        }
+
+        .signature-card {
+            width: 140px;
+            height: 70px;
+            background: #090e1a;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .signature-card img {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #fff;
+            padding: 4px;
+        }
+
+        .badge-tag {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            text-align: center;
+            margin-top: 4px;
+        }
+
+        .identity-fields {
+            flex: 1;
+            min-width: 280px;
+        }
+
+        .fields-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .nin-box {
+            background: linear-gradient(135deg, rgba(37, 99, 235, 0.1), rgba(6, 182, 212, 0.1));
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            padding: 12px 16px;
+            margin-bottom: 20px;
+        }
+
+        .nin-label {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .nin-value {
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: #fff;
+            font-family: monospace;
+        }
+
+        /* Historique des sauvegardes */
+        .history-section {
+            margin-top: 32px;
+        }
+
+        .history-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        .history-table th {
+            text-align: left;
+            padding: 12px;
+            background: #0e1626;
+            color: var(--text-secondary);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .history-table td {
+            padding: 12px;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-primary);
+        }
+
+        .history-table tr:hover td {
+            background: var(--bg-card-hover);
+        }
+
+        /* Alertes */
+        .alert {
+            padding: 12px 16px;
+            border-radius: var(--radius-md);
+            font-size: 13px;
+            margin-bottom: 16px;
+            display: none;
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.15);
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            color: #34d399;
+        }
+
+        .alert-error {
+            background: rgba(244, 63, 94, 0.15);
+            border: 1px solid rgba(244, 63, 94, 0.4);
+            color: #fb7185;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <!-- Header -->
+    <header>
+        <div class="brand">
+            <div class="brand-logo">🪪</div>
+            <div class="brand-text">
+                <h1>CNIBE Biometric Reader (LAN)</h1>
+                <h2>الجمهورية الجزائرية الديمقراطية الشعبية - بطاقة التعريف الوطنية البيومترية</h2>
+            </div>
+        </div>
+        <div style="font-size: 12px; color: var(--text-muted); text-align: right;">
+            Serveur Web : <span style="color: var(--accent-cyan);">Flask Minimal Test</span><br>
+            Client Agent : <span style="color: var(--accent-emerald);">http://127.0.0.1:5001</span>
+        </div>
+    </header>
+
+    <!-- Status Bar -->
+    <div class="status-bar">
+        <div class="status-pill">
+            <div id="dot-server" class="status-dot online"></div>
+            <span>Serveur Flask LAN : <strong>En ligne</strong></span>
+        </div>
+        <div class="status-pill">
+            <div id="dot-agent" class="status-dot offline"></div>
+            <span id="text-agent">Agent Local : <strong>Vérification...</strong></span>
+        </div>
+        <div class="status-pill">
+            <div id="dot-reader" class="status-dot offline"></div>
+            <span id="text-reader">Lecteur NFC : <strong>Détection...</strong></span>
+        </div>
+        <div class="status-pill">
+            <div id="dot-card" class="status-dot offline"></div>
+            <span id="text-card">Carte : <strong>Non détectée</strong></span>
+        </div>
+    </div>
+
+    <!-- Alert Box -->
+    <div id="alert-box" class="alert"></div>
+
+    <!-- Main Grid -->
+    <div class="main-grid">
+        <!-- Colonne Gauche : Paramètres de Scan -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">⚙️ Paramètres de Lecture BAC</div>
+            </div>
+
+            <form id="form-scan" onsubmit="event.preventDefault(); triggerScan();">
+                <div class="form-group">
+                    <label for="input-doc">N° Document (9 chiffres)</label>
+                    <input type="text" id="input-doc" class="form-control" value="106172516" placeholder="Ex: 106172516" required maxlength="10">
+                </div>
+
+                <div class="form-group">
+                    <label for="input-dob">Date de Naissance (JJ/MM/AAAA)</label>
+                    <input type="text" id="input-dob" class="form-control" value="19/11/1957" placeholder="JJ/MM/AAAA" required>
+                </div>
+
+                <div class="form-group">
+                    <label for="input-doe">Date d'Expiration (JJ/MM/AAAA)</label>
+                    <input type="text" id="input-doe" class="form-control" value="04/10/2027" placeholder="JJ/MM/AAAA" required>
+                </div>
+
+                <button type="submit" id="btn-scan" class="btn btn-primary">
+                    <span id="btn-scan-icon">📲</span>
+                    <span id="btn-scan-text">Lire la Carte (NFC)</span>
+                </button>
+
+                <button type="button" class="btn btn-secondary" onclick="prefillTestCard()">
+                    🔄 Recharger données de test
+                </button>
+            </form>
+
+            <div id="progress-box" class="progress-box">
+                <div id="progress-text" class="progress-status">Établissement du canal sécurisé BAC...</div>
+                <div class="progress-bar-bg">
+                    <div id="progress-bar" class="progress-bar-fill"></div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
+                <strong>💡 Fonctionnement :</strong><br>
+                1. Ce navigateur contacte l'agent local sur <code>127.0.0.1:5001</code>.<br>
+                2. L'agent lit la carte NFC via le lecteur USB de ce PC client.<br>
+                3. Les données extraites sont affichées et synchronisées automatiquement avec le serveur Flask.
+            </div>
+        </div>
+
+        <!-- Colonne Droite : Données Biométriques & Identité Extraites -->
+        <div class="card">
+            <div class="card-header">
+                <div class="card-title">👤 Fiche d'Identité Biométrique (CNIBE)</div>
+                <span id="badge-status" style="font-size: 12px; color: var(--text-muted);">En attente de lecture...</span>
+            </div>
+
+            <div class="identity-header">
+                <!-- Colonne Photos & Signatures -->
+                <div class="photos-column">
+                    <div>
+                        <div class="photo-card">
+                            <img id="img-photo" src="" style="display: none;" alt="Photo Biométrique">
+                            <div id="photo-placeholder" class="photo-placeholder">👤</div>
+                        </div>
+                        <div class="badge-tag">Photo Biométrique (DG2)</div>
+                    </div>
+
+                    <div>
+                        <div class="signature-card">
+                            <img id="img-signature" src="" style="display: none;" alt="Signature">
+                            <div id="sig-placeholder" style="font-size: 20px; color: var(--text-muted);">✍️</div>
+                        </div>
+                        <div class="badge-tag">Signature (DG7)</div>
+                    </div>
+                </div>
+
+                <!-- Champs d'Identité -->
+                <div class="identity-fields">
+                    <!-- NIN -->
+                    <div class="nin-box">
+                        <div class="nin-label">Numéro d'Identification National (NIN) / الرقم التعريفي الوطني</div>
+                        <div id="val-nin" class="nin-value">---</div>
+                    </div>
+
+                    <div class="fields-grid">
+                        <div class="form-group">
+                            <label>Nom (Français)</label>
+                            <input type="text" id="val-nom-lat" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>اللقب (بالعربية)</label>
+                            <input type="text" id="val-nom-ar" class="form-control arabic-text" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Prénom (Français)</label>
+                            <input type="text" id="val-prenom-lat" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>الاسم (بالعربية)</label>
+                            <input type="text" id="val-prenom-ar" class="form-control arabic-text" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Date de Naissance</label>
+                            <input type="text" id="val-dob" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Lieu de Naissance / مكان الازدياد</label>
+                            <input type="text" id="val-lieu" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Sexe / الجنس</label>
+                            <input type="text" id="val-sexe" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Groupe Sanguin / فصيلة الدم</label>
+                            <input type="text" id="val-groupe" class="form-control" readonly placeholder="---">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Détails du Document -->
+            <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 10px;">
+                <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px;">
+                    📄 Détails du Document eMRTD (DG12 & DG1)
+                </div>
+                <div class="fields-grid">
+                    <div class="form-group">
+                        <label>Autorité de Délivrance / سلطة الإصدار</label>
+                        <input type="text" id="val-autorite" class="form-control" readonly placeholder="---">
+                    </div>
+                    <div class="form-group">
+                        <label>Date de Délivrance</label>
+                        <input type="text" id="val-date-emission" class="form-control" readonly placeholder="---">
+                    </div>
+                    <div class="form-group">
+                        <label>Date d'Expiration</label>
+                        <input type="text" id="val-date-expir" class="form-control" readonly placeholder="---">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Historique des Cartes Enregistrées sur le Serveur Flask -->
+    <div class="card history-section">
+        <div class="card-header">
+            <div class="card-title">🗄️ Historique des Cartes Reçues par le Serveur Flask (Test)</div>
+            <button class="btn btn-secondary" style="width: auto; padding: 6px 14px; margin: 0;" onclick="loadHistory()">
+                🔄 Actualiser l'historique
+            </button>
+        </div>
+        <div style="overflow-x: auto;">
+            <table class="history-table">
+                <thead>
+                    <tr>
+                        <th>Date Scan</th>
+                        <th>N° Document</th>
+                        <th>NIN</th>
+                        <th>Nom & Prénom (Latin)</th>
+                        <th>الاسم واللقب (عربي)</th>
+                        <th>Date Naiss.</th>
+                        <th>Photo</th>
+                    </tr>
+                </thead>
+                <tbody id="history-tbody">
+                    <tr>
+                        <td colspan="7" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const AGENT_URL = "http://127.0.0.1:5001";
+    let agentOnline = false;
+    let isScanningActive = false;
+
+    // Vérification en boucle de l'agent local (toutes les 3 secondes)
+    async function checkAgentStatus() {
+        if (isScanningActive) return; // Ne JAMAIS interroger l'agent pendant qu'un scan NFC est en cours
+
+        const dotAgent = document.getElementById("dot-agent");
+        const textAgent = document.getElementById("text-agent");
+        const dotReader = document.getElementById("dot-reader");
+        const textReader = document.getElementById("text-reader");
+        const dotCard = document.getElementById("dot-card");
+        const textCard = document.getElementById("text-card");
+
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 1500);
+            
+            const res = await fetch(`${AGENT_URL}/status`, { signal: controller.signal });
+            clearTimeout(timeoutId);
+
+            if (res.ok) {
+                const data = await res.json();
+                agentOnline = true;
+                dotAgent.className = "status-dot online";
+                textAgent.innerHTML = "Agent Local : <strong>Connecté (5001)</strong>";
+
+                if (data.readers_count > 0) {
+                    dotReader.className = "status-dot online";
+                    textReader.innerHTML = `Lecteur : <strong>${data.selected_reader || data.readers[0]}</strong>`;
+                } else {
+                    dotReader.className = "status-dot warning";
+                    textReader.innerHTML = "Lecteur : <strong>Aucun lecteur détecté</strong>";
+                }
+
+                if (data.card_present) {
+                    dotCard.className = "status-dot online";
+                    textCard.innerHTML = "Carte : <strong>Présente sur le lecteur</strong>";
+                } else {
+                    dotCard.className = "status-dot offline";
+                    textCard.innerHTML = "Carte : <strong>Non détectée</strong>";
+                }
+            } else {
+                throw new Error("Statut non OK");
+            }
+        } catch (err) {
+            agentOnline = false;
+            dotAgent.className = "status-dot offline";
+            textAgent.innerHTML = "Agent Local : <strong>Non démarré (127.0.0.1:5001)</strong>";
+            dotReader.className = "status-dot offline";
+            textReader.innerHTML = "Lecteur : <strong>Inconnu</strong>";
+            dotCard.className = "status-dot offline";
+            textCard.innerHTML = "Carte : <strong>Inconnue</strong>";
+        }
+    }
+
+    // Déclenchement de la lecture
+    async function triggerScan() {
+        const doc = document.getElementById("input-doc").value.trim();
+        const dob = document.getElementById("input-dob").value.trim();
+        const doe = document.getElementById("input-doe").value.trim();
+        const btnScan = document.getElementById("btn-scan");
+        const btnScanText = document.getElementById("btn-scan-text");
+        const progressBox = document.getElementById("progress-box");
+        const progressBar = document.getElementById("progress-bar");
+        const progressText = document.getElementById("progress-text");
+
+        if (!agentOnline) {
+            showAlert("L'agent client local n'est pas actif ! Lancez 'lancer_agent_client.bat' sur votre PC.", "error");
+            return;
+        }
+
+        isScanningActive = true;
+        document.getElementById("dot-card").className = "status-dot online";
+        document.getElementById("text-card").innerHTML = "Carte : <strong>Lecture NFC en cours...</strong>";
+
+        showAlert("", "none");
+        btnScan.disabled = true;
+        btnScanText.textContent = "Lecture NFC en cours...";
+        progressBox.style.display = "block";
+        progressBar.style.width = "30%";
+        progressText.textContent = "Connexion à la carte & authentification BAC...";
+
+        try {
+            progressBar.style.width = "60%";
+            progressText.textContent = "Lecture sécurisée des Data Groups (DG1, DG11, DG12, Photo DG2, Signature DG7)...";
+
+            const res = await fetch(`${AGENT_URL}/scan`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ doc, dob, doe, wait: 15 })
+            });
+
+            const result = await res.json();
+
+            if (res.ok && result.status === "SUCCESS") {
+                progressBar.style.width = "90%";
+                progressText.textContent = "Transmission au serveur Flask...";
+                
+                displayCardData(result.data);
+
+                // Envoi des données au serveur Flask pour enregistrement centralisé
+                await saveToServer(result.data);
+
+                progressBar.style.width = "100%";
+                progressText.textContent = "Lecture et enregistrement terminés avec succès !";
+                showAlert("✅ Carte CNIBE lue et sauvegardée sur le serveur Flask avec succès !", "success");
+            } else {
+                throw new Error(result.message || "Erreur lors de la lecture.");
+            }
+
+        } catch (err) {
+            showAlert(`❌ Échec de la lecture : ${err.message}`, "error");
+        } finally {
+            isScanningActive = false;
+            btnScan.disabled = false;
+            btnScanText.textContent = "Lire la Carte (NFC)";
+            setTimeout(() => { progressBox.style.display = "none"; }, 3000);
+            checkAgentStatus();
+        }
+    }
+
+    // Affichage des données sur l'interface
+    function displayCardData(data) {
+        const dg1 = data.dg1_mrz || {};
+        const dg11 = data.dg11_personnel || {};
+        const dg12 = data.dg12_document || {};
+        const photo = data.photo || {};
+        const sig = data.signature || {};
+
+        // NIN
+        document.getElementById("val-nin").textContent = dg11.nin || "---";
+
+        // Noms & Prénoms
+        document.getElementById("val-nom-lat").value = (dg11.nom && dg11.nom.latin) || dg1.nom_latin || "";
+        document.getElementById("val-nom-ar").value = (dg11.nom && dg11.nom.arabe) || "";
+        document.getElementById("val-prenom-lat").value = (dg11.prenoms && dg11.prenoms.latin) || dg1.prenoms_latin || "";
+        document.getElementById("val-prenom-ar").value = (dg11.prenoms && dg11.prenoms.arabe) || "";
+
+        // Date & Lieu
+        document.getElementById("val-dob").value = dg1.date_of_birth || dg11.date_naissance_complete || "";
+        const lieuLat = (dg11.lieu_naissance && dg11.lieu_naissance.latin) || "";
+        const lieuAr = (dg11.lieu_naissance && dg11.lieu_naissance.arabe) || "";
+        document.getElementById("val-lieu").value = lieuAr ? `${lieuLat} (${lieuAr})` : lieuLat;
+
+        // Sexe & Groupe sanguin
+        const sg = dg11.sexe_groupe_sanguin || {};
+        document.getElementById("val-sexe").value = sg.sexe_latin ? `${sg.sexe_latin} / ${sg.sexe_arabe || ''}` : (dg1.sex || "");
+        document.getElementById("val-groupe").value = sg.groupe_sanguin || "---";
+
+        // Document
+        const autLat = (dg12.autorite_emission && dg12.autorite_emission.latin) || "";
+        const autAr = (dg12.autorite_emission && dg12.autorite_emission.arabe) || "";
+        document.getElementById("val-autorite").value = autAr ? `${autLat} - ${autAr}` : autLat;
+        document.getElementById("val-date-emission").value = dg12.date_emission || "---";
+        document.getElementById("val-date-expir").value = dg1.date_of_expiry || "";
+
+        // Photo
+        if (photo.base64) {
+            const imgP = document.getElementById("img-photo");
+            imgP.src = `data:image/jpeg;base64,${photo.base64}`;
+            imgP.style.display = "block";
+            document.getElementById("photo-placeholder").style.display = "none";
+        }
+
+        // Signature
+        if (sig.base64) {
+            const imgS = document.getElementById("img-signature");
+            imgS.src = `data:image/jpeg;base64,${sig.base64}`;
+            imgS.style.display = "block";
+            document.getElementById("sig-placeholder").style.display = "none";
+        }
+
+        document.getElementById("badge-status").innerHTML = `<span style="color: var(--accent-emerald);">● Lecture réussie (${data.timestamp})</span>`;
+    }
+
+    // Sauvegarde vers le serveur Flask
+    async function saveToServer(cardData) {
+        try {
+            const res = await fetch("/api/save_card", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(cardData)
+            });
+            if (res.ok) {
+                loadHistory();
+            }
+        } catch (err) {
+            console.error("Erreur enregistrement serveur Flask:", err);
+        }
+    }
+
+    // Chargement de l'historique depuis le serveur Flask
+    async function loadHistory() {
+        try {
+            const res = await fetch("/api/history");
+            if (res.ok) {
+                const history = await res.json();
+                const tbody = document.getElementById("history-tbody");
+                if (!history || history.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = history.map(item => `
+                    <tr>
+                        <td>${item.timestamp || '---'}</td>
+                        <td><strong>${item.document_number || '---'}</strong></td>
+                        <td style="font-family: monospace; color: var(--accent-cyan);">${item.nin || '---'}</td>
+                        <td>${item.nom_latin || ''} ${item.prenom_latin || ''}</td>
+                        <td class="arabic-text" style="font-size: 13px;">${item.nom_arabe || ''} ${item.prenom_arabe || ''}</td>
+                        <td>${item.date_naissance || '---'}</td>
+                        <td>${item.has_photo ? '📷 Présente' : '—'}</td>
+                    </tr>
+                `).join("");
+            }
+        } catch (err) {
+            console.error("Erreur historique:", err);
+        }
+    }
+
+    function showAlert(msg, type) {
+        const box = document.getElementById("alert-box");
+        if (type === "none" || !msg) {
+            box.style.display = "none";
+            return;
+        }
+        box.className = `alert alert-${type}`;
+        box.textContent = msg;
+        box.style.display = "block";
+    }
+
+    function prefillTestCard() {
+        document.getElementById("input-doc").value = "106172516";
+        document.getElementById("input-dob").value = "19/11/1957";
+        document.getElementById("input-doe").value = "04/10/2027";
+    }
+
+    // Initialisation
+    window.addEventListener("DOMContentLoaded", () => {
+        checkAgentStatus();
+        setInterval(checkAgentStatus, 2500);
+        loadHistory();
+    });
+</script>
+
+</body>
+</html>

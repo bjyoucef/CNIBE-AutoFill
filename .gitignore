@@ -1,0 +1,29 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environnements virtuels
+.venv/
+venv/
+env/
+ENV/
+
+# Données biométriques et personnelles sensibles (Protection RGPD / Confidentialité)
+photo.jpg
+signature.jpg
+test_saved_cards.json
+*.log
+
+# Fichiers temporaires / backups
+org.py
+*.bak
+*.tmp
+
+# Fichiers système
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+.DS_Store
