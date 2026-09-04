@@ -778,11 +778,33 @@ def parse_ef_dg1(data: bytes) -> Dict[str, Any]:
     return res
 
 
-def extract_ef_dg2_photo(data: bytes, output_path: str = "photo.jpg") -> Optional[Dict[str, Any]]:
+def get_unique_filename(base_path: str) -> str:
+    """
+    Gestion anti-écrasement des fichiers extraits :
+    - Si le fichier spécifié (ex: photo.jpg) n'existe pas, retourne ce chemin (création du fichier de base).
+    - S'il existe déjà, génère un nom incrémenté avec un compteur :
+      nom_1.ext, nom_2.ext, nom_3.ext... (ex: photo_1.jpg, photo_2.jpg).
+    """
+    if not os.path.exists(base_path):
+        return base_path
+
+    dirname, filename = os.path.split(base_path)
+    stem, ext = os.path.splitext(filename)
+    counter = 1
+    while True:
+        candidate_name = f"{stem}_{counter}{ext}"
+        candidate = os.path.join(dirname, candidate_name) if dirname else candidate_name
+        if not os.path.exists(candidate):
+            return candidate
+        counter += 1
+
+
+def extract_ef_dg2_photo(data: bytes, output_path: str = "photo.jpg", auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
     """
     Extrait l'image biométrique faciale depuis EF.DG2 (FID 0102).
     Détecte automatiquement les formats JPEG (0xFF 0xD8 0xFF) ou JPEG 2000.
-    Enregistre l'image dans le fichier spécifié.
+    Enregistre l'image dans le fichier spécifié (avec auto-incrémentation si déjà existant).
+    Si include_base64=True, inclut directement l'encodage Base64 en mémoire dans le résultat.
     """
     image_bytes = None
     image_format = None
@@ -810,13 +832,18 @@ def extract_ef_dg2_photo(data: bytes, output_path: str = "photo.jpg") -> Optiona
                 image_format = "JPEG2000 (Codestream)"
 
     if image_bytes:
-        with open(output_path, "wb") as f:
+        final_path = get_unique_filename(output_path) if auto_increment else output_path
+        with open(final_path, "wb") as f:
             f.write(image_bytes)
-        return {
+        result = {
             "format": image_format,
             "size_bytes": len(image_bytes),
-            "saved_path": os.path.abspath(output_path)
+            "saved_path": os.path.abspath(final_path),
+            "filename": os.path.basename(final_path)
         }
+        if include_base64:
+            result["base64"] = base64.b64encode(image_bytes).decode("ascii")
+        return result
     return None
 
 
@@ -1040,10 +1067,12 @@ def parse_ef_dg12(data: bytes) -> Dict[str, Any]:
     return res
 
 
-def extract_ef_dg7_signature(data: bytes, output_path: str = "signature.jpg") -> Optional[Dict[str, Any]]:
+def extract_ef_dg7_signature(data: bytes, output_path: str = "signature.jpg", auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
     """
     Extrait l'image de la signature manuscrite numérisée du titulaire depuis EF.DG7 (FID 0107).
     Prend en charge JPEG, JPEG 2000, PNG ou Bitmap.
+    Enregistre l'image dans le fichier spécifié (avec auto-incrémentation si déjà existant).
+    Si include_base64=True, inclut directement l'encodage Base64 en mémoire dans le résultat.
     """
     image_bytes = None
     image_format = None
@@ -1075,13 +1104,18 @@ def extract_ef_dg7_signature(data: bytes, output_path: str = "signature.jpg") ->
                     image_format = "PNG"
 
     if image_bytes:
-        with open(output_path, "wb") as f:
+        final_path = get_unique_filename(output_path) if auto_increment else output_path
+        with open(final_path, "wb") as f:
             f.write(image_bytes)
-        return {
+        result = {
             "format": image_format,
             "size_bytes": len(image_bytes),
-            "saved_path": os.path.abspath(output_path)
+            "saved_path": os.path.abspath(final_path),
+            "filename": os.path.basename(final_path)
         }
+        if include_base64:
+            result["base64"] = base64.b64encode(image_bytes).decode("ascii")
+        return result
     return None
 
 
@@ -1230,6 +1264,32 @@ def read_cnibe_card(
     card_connected = False
     start_wait = time.time()
 
+    # Pré-cycle d'alimentation : nettoyer tout état résiduel de la puce
+    # (résout SW=6A88 lors de GET CHALLENGE après un scan précédent interrompu)
+    if HAS_SCARD_TRANSACTION:
+        try:
+            from smartcard.scard import SCardConnect, SCardDisconnect, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0, SCARD_PROTOCOL_T1, SCARD_UNPOWER_CARD as _UNPOWER
+            from smartcard.scard import SCardEstablishContext, SCardReleaseContext, SCardListReaders, SCARD_SCOPE_USER as _SCOPE_USER
+            _hr, _hctx = SCardEstablishContext(_SCOPE_USER)
+            if _hr == SCARD_S_SUCCESS:
+                _hr, _rlist = SCardListReaders(_hctx, [])
+                if _hr == SCARD_S_SUCCESS and _rlist:
+                    _target = str(target_reader)
+                    _hr, _hcard, _ = SCardConnect(_hctx, _target, SCARD_SHARE_SHARED, SCARD_PROTOCOL_T0 | SCARD_PROTOCOL_T1)
+                    if _hr == SCARD_S_SUCCESS:
+                        SCardDisconnect(_hcard, _UNPOWER)
+                SCardReleaseContext(_hctx)
+            time.sleep(0.3)
+        except Exception:
+            pass
+    else:
+        try:
+            connection.connect()
+            connection.disconnect()
+            time.sleep(0.2)
+        except Exception:
+            pass
+
     print(f"[*] Déposez votre carte d'identité (CNIBE) sur le lecteur NFC...")
     while (time.time() - start_wait) < wait_seconds:
         try:
@@ -1271,15 +1331,56 @@ def read_cnibe_card(
             print("[*] Canal PC/SC verrouillé en exclusivité (protection anti-interférence Windows active).")
         time.sleep(0.15)
 
-        # 1. Sélection de l'application ICAO AID
-        print("[*] Sélection de l'application ICAO eMRTD (AID A0 00 00 02 47 10 01)...")
-        select_icao_application(connection, guard)
+        # 1-2. Sélection ICAO AID + Authentification BAC (avec retry en cas de micro-coupure initiale)
+        sm_session = None
+        for bac_attempt in range(2):
+            try:
+                print("[*] Sélection de l'application ICAO eMRTD (AID A0 00 00 02 47 10 01)...")
+                select_icao_application(connection, guard)
+                print("[*] Exécution du protocole BAC (Basic Access Control)...")
+                sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
+                guard.bac_succeeded = True
+                print("[+] Authentification BAC réussie ! Canal Secure Messaging établi.")
+                break
+            except (CardConnectionException, NoCardException) as e:
+                if bac_attempt == 0:
+                    print(f"[*] Micro-coupure NFC lors de l'authentification initiale. Reconnexion...", file=sys.stderr)
+                    # Libérer la transaction en cours
+                    if in_transaction and hcard is not None:
+                        try:
+                            SCardEndTransaction(hcard, SCARD_RESET_CARD)
+                        except Exception:
+                            pass
+                        in_transaction = False
+                    try:
+                        connection.disconnect()
+                    except Exception:
+                        pass
+                    time.sleep(0.5)
+                    try:
+                        if HAS_SCARD_TRANSACTION:
+                            connection.connect(mode=SCARD_SHARE_EXCLUSIVE)
+                        else:
+                            connection.connect()
+                    except Exception:
+                        connection.connect()
+                    # Re-verrouillage exclusif
+                    inner_conn = getattr(connection, 'component', connection)
+                    hcard = getattr(inner_conn, 'hcard', None)
+                    if HAS_SCARD_TRANSACTION and hcard is not None:
+                        try:
+                            hres = SCardBeginTransaction(hcard)
+                            if hres == SCARD_S_SUCCESS:
+                                in_transaction = True
+                        except Exception:
+                            pass
+                    time.sleep(0.15)
+                    continue
+                else:
+                    raise
 
-        # 2. Authentification BAC
-        print("[*] Exécution du protocole BAC (Basic Access Control)...")
-        sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
-        guard.bac_succeeded = True
-        print("[+] Authentification BAC réussie ! Canal Secure Messaging établi.")
+        if sm_session is None:
+            raise SecurityException("Impossible d'établir le canal Secure Messaging après 2 tentatives.")
 
         result_data: Dict[str, Any] = {
             "status": "SUCCESS",
@@ -1288,8 +1389,47 @@ def read_cnibe_card(
 
         def refresh_sm():
             """Restaure automatiquement le canal Secure Messaging en cas de micro-coupure RF transitoire."""
-            nonlocal sm_session
-            time.sleep(0.12)
+            nonlocal sm_session, in_transaction, hcard
+            # RÈGLE CRITIQUE : Réinitialisation matérielle de la puce NFC avant ré-authentification.
+            # Sans ce reset, la carte reste en état SM actif et rejette les commandes non protégées
+            # (SW=6988/6882), rendant toute récupération impossible.
+            # On utilise disconnect/connect plutôt que reconnect pour garantir un cycle complet
+            # de mise hors tension NFC et ré-négociation du protocole T=1.
+            if in_transaction and hcard is not None:
+                try:
+                    SCardEndTransaction(hcard, SCARD_RESET_CARD)
+                except Exception:
+                    pass
+                in_transaction = False
+
+            try:
+                connection.disconnect()
+            except Exception:
+                pass
+
+            time.sleep(0.3)
+
+            # Reconnexion propre avec verrouillage exclusif
+            try:
+                if HAS_SCARD_TRANSACTION:
+                    connection.connect(mode=SCARD_SHARE_EXCLUSIVE)
+                else:
+                    connection.connect()
+            except Exception:
+                connection.connect()
+
+            # Re-verrouillage exclusif
+            inner_conn_r = getattr(connection, 'component', connection)
+            hcard = getattr(inner_conn_r, 'hcard', None)
+            if HAS_SCARD_TRANSACTION and hcard is not None:
+                try:
+                    hres = SCardBeginTransaction(hcard)
+                    if hres == SCARD_S_SUCCESS:
+                        in_transaction = True
+                except Exception:
+                    pass
+
+            time.sleep(0.15)
             select_icao_application(connection, guard)
             sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
             guard.bac_succeeded = True
@@ -1297,14 +1437,15 @@ def read_cnibe_card(
         def read_file_safe(fid_bytes: bytes, desc: str) -> Optional[bytes]:
             """Lit un fichier élémentaire avec récupération automatique transparente en cas de coupure NFC."""
             nonlocal sm_session
-            for attempt in range(2):
+            max_attempts = 3  # 3 tentatives pour absorber les micro-coupures NFC sur les gros fichiers
+            for attempt in range(max_attempts):
                 try:
                     return read_elementary_file(sm_session, fid_bytes)
                 except (CardConnectionException, NoCardException):
                     raise
                 except Exception as e:
-                    if attempt == 0:
-                        print(f"[*] Micro-coupure NFC lors de {desc}. Restauration du canal sécurisé...", file=sys.stderr)
+                    if attempt < max_attempts - 1:
+                        print(f"[*] Micro-coupure NFC lors de {desc} (tentative {attempt + 1}/{max_attempts}). Restauration du canal sécurisé...", file=sys.stderr)
                         try:
                             refresh_sm()
                             print(f"[+] Canal restauré avec succès ! Reprise de la lecture de {desc}...")
@@ -1362,16 +1503,10 @@ def read_cnibe_card(
         print("[*] Lecture EF.DG2 (Photo faciale biométrique)...")
         ef_dg2_bytes = read_file_safe(bytes.fromhex("0102"), "EF.DG2")
         if ef_dg2_bytes:
-            photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest)
+            photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest, auto_increment=True, include_base64=include_base64)
             if photo_info:
                 result_data["photo"] = photo_info
-                if include_base64 and os.path.exists(photo_dest):
-                    try:
-                        with open(photo_dest, "rb") as pf:
-                            result_data["photo"]["base64"] = base64.b64encode(pf.read()).decode("ascii")
-                    except Exception:
-                        pass
-                print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_dest}")
+                print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_info.get('filename', photo_dest)}")
         else:
             print("[!] Photo non extraite de DG2.")
 
@@ -1381,16 +1516,10 @@ def read_cnibe_card(
         print("[*] Lecture EF.DG7 (Signature manuscrite numérisée)...")
         ef_dg7_bytes = read_file_safe(bytes.fromhex("0107"), "EF.DG7")
         if ef_dg7_bytes:
-            sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest)
+            sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest, auto_increment=True, include_base64=include_base64)
             if sig_info:
                 result_data["signature"] = sig_info
-                if include_base64 and os.path.exists(signature_dest):
-                    try:
-                        with open(signature_dest, "rb") as sf:
-                            result_data["signature"]["base64"] = base64.b64encode(sf.read()).decode("ascii")
-                    except Exception:
-                        pass
-                print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {signature_dest}")
+                print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {sig_info.get('filename', signature_dest)}")
 
         return result_data
 

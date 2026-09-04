@@ -11,8 +11,14 @@ env/
 ENV/
 
 # Données biométriques et personnelles sensibles (Protection RGPD / Confidentialité)
-photo.jpg
-signature.jpg
+photo*.jpg
+photo*.png
+photo*.jp2
+photo*.*
+signature*.jpg
+signature*.png
+signature*.jp2
+signature*.*
 test_saved_cards.json
 *.log
 

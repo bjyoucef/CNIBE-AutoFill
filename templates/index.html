@@ -565,7 +565,7 @@
                             <img id="img-photo" src="" style="display: none;" alt="Photo Biométrique">
                             <div id="photo-placeholder" class="photo-placeholder">👤</div>
                         </div>
-                        <div class="badge-tag">Photo Biométrique (DG2)</div>
+                        <div class="badge-tag" id="badge-photo-tag">Photo Biométrique (DG2)</div>
                     </div>
 
                     <div>
@@ -573,7 +573,7 @@
                             <img id="img-signature" src="" style="display: none;" alt="Signature">
                             <div id="sig-placeholder" style="font-size: 20px; color: var(--text-muted);">✍️</div>
                         </div>
-                        <div class="badge-tag">Signature (DG7)</div>
+                        <div class="badge-tag" id="badge-sig-tag">Signature (DG7)</div>
                     </div>
                 </div>
 
@@ -841,6 +841,10 @@
             imgP.src = `data:image/jpeg;base64,${photo.base64}`;
             imgP.style.display = "block";
             document.getElementById("photo-placeholder").style.display = "none";
+            const tagP = document.getElementById("badge-photo-tag");
+            if (tagP && photo.filename) {
+                tagP.textContent = `Photo (${photo.filename})`;
+            }
         }
 
         // Signature
@@ -849,6 +853,10 @@
             imgS.src = `data:image/jpeg;base64,${sig.base64}`;
             imgS.style.display = "block";
             document.getElementById("sig-placeholder").style.display = "none";
+            const tagS = document.getElementById("badge-sig-tag");
+            if (tagS && sig.filename) {
+                tagS.textContent = `Signature (${sig.filename})`;
+            }
         }
 
         document.getElementById("badge-status").innerHTML = `<span style="color: var(--accent-emerald);">● Lecture réussie (${data.timestamp})</span>`;
@@ -890,7 +898,7 @@
                         <td>${item.nom_latin || ''} ${item.prenom_latin || ''}</td>
                         <td class="arabic-text" style="font-size: 13px;">${item.nom_arabe || ''} ${item.prenom_arabe || ''}</td>
                         <td>${item.date_naissance || '---'}</td>
-                        <td>${item.has_photo ? '📷 Présente' : '—'}</td>
+                        <td>${item.photo_filename ? '📷 ' + item.photo_filename : (item.has_photo ? '📷 Présente' : '—')}</td>
                     </tr>
                 `).join("");
             }

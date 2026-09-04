@@ -66,6 +66,9 @@ def get_passive_pcsc_status() -> Dict[str, Any]:
     """
     Vérifie l'état du lecteur et de la carte de manière 100% PASSIVE.
     N'établit aucune connexion et ne transmet aucun signal reset RF à la puce.
+    RÈGLE CRITIQUE : Si un scan NFC est en cours (is_scanning), retourne immédiatement
+    un état statique sans JAMAIS toucher aux contextes PC/SC (winscard), pour ne pas
+    interférer avec le transfert NFC des gros fichiers (DG2 photo, DG7 signature).
     """
     global is_scanning
     if is_scanning:
@@ -80,30 +83,85 @@ def get_passive_pcsc_status() -> Dict[str, Any]:
             "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
         }
 
-    if not HAS_SCARD_PASSIVE:
+    # Tenter d'acquérir le verrou sans bloquer pour éviter toute collision
+    # avec un scan qui démarrerait entre le check is_scanning et l'appel SCard
+    if not scan_lock.acquire(blocking=False):
+        return {
+            "status": "OK",
+            "agent": "CNIBE Local Client Agent v1.0",
+            "readers_count": 1,
+            "readers": ["Lecteur NFC actif"],
+            "selected_reader": "Lecture NFC en cours...",
+            "card_present": True,
+            "is_scanning": True,
+            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+
+    try:
+        if not HAS_SCARD_PASSIVE:
+            try:
+                r_list = readers()
+                return {
+                    "status": "OK",
+                    "agent": "CNIBE Local Client Agent v1.0",
+                    "readers_count": len(r_list),
+                    "readers": [str(r) for r in r_list],
+                    "selected_reader": str(r_list[0]) if r_list else None,
+                    "card_present": bool(r_list),
+                    "is_scanning": False,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+            except Exception:
+                return {"status": "OK", "readers_count": 0, "readers": [], "card_present": False, "is_scanning": False}
+
+        hcontext = None
         try:
-            r_list = readers()
+            hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
+            if hresult != SCARD_S_SUCCESS:
+                return {"status": "OK", "readers_count": 0, "readers": [], "selected_reader": None, "card_present": False, "is_scanning": False}
+
+            hresult, reader_list = SCardListReaders(hcontext, [])
+            if hresult != SCARD_S_SUCCESS or not reader_list:
+                return {
+                    "status": "OK",
+                    "agent": "CNIBE Local Client Agent v1.0",
+                    "readers_count": 0,
+                    "readers": [],
+                    "selected_reader": None,
+                    "card_present": False,
+                    "is_scanning": False,
+                    "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
+                }
+
+            # Sélectionner de préférence le lecteur Contactless / CL / NFC
+            target_reader = reader_list[0]
+            for r in reader_list:
+                r_upper = r.upper()
+                if any(kw in r_upper for kw in ("CL", "CONTACTLESS", "NFC", "PICC", "RFID")):
+                    target_reader = r
+                    break
+
+            # Inspection passive de l'état matériel (SCARD_STATE_UNAWARE)
+            readerstates = [(target_reader, SCARD_STATE_UNAWARE)]
+            hresult, states = SCardGetStatusChange(hcontext, 0, readerstates)
+            card_present = False
+
+            if hresult == SCARD_S_SUCCESS and states:
+                _, eventstate, _ = states[0]
+                card_present = bool(eventstate & SCARD_STATE_PRESENT)
+
             return {
                 "status": "OK",
                 "agent": "CNIBE Local Client Agent v1.0",
-                "readers_count": len(r_list),
-                "readers": [str(r) for r in r_list],
-                "selected_reader": str(r_list[0]) if r_list else None,
-                "card_present": bool(r_list),
+                "readers_count": len(reader_list),
+                "readers": reader_list,
+                "selected_reader": target_reader,
+                "card_present": card_present,
                 "is_scanning": False,
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
-        except Exception:
-            return {"status": "OK", "readers_count": 0, "readers": [], "card_present": False, "is_scanning": False}
 
-    hcontext = None
-    try:
-        hresult, hcontext = SCardEstablishContext(SCARD_SCOPE_USER)
-        if hresult != SCARD_S_SUCCESS:
-            return {"status": "OK", "readers_count": 0, "readers": [], "selected_reader": None, "card_present": False, "is_scanning": False}
-
-        hresult, reader_list = SCardListReaders(hcontext, [])
-        if hresult != SCARD_S_SUCCESS or not reader_list:
+        except Exception as e:
             return {
                 "status": "OK",
                 "agent": "CNIBE Local Client Agent v1.0",
@@ -112,55 +170,17 @@ def get_passive_pcsc_status() -> Dict[str, Any]:
                 "selected_reader": None,
                 "card_present": False,
                 "is_scanning": False,
+                "message": str(e),
                 "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
             }
-
-        # Sélectionner de préférence le lecteur Contactless / CL / NFC
-        target_reader = reader_list[0]
-        for r in reader_list:
-            r_upper = r.upper()
-            if any(kw in r_upper for kw in ("CL", "CONTACTLESS", "NFC", "PICC", "RFID")):
-                target_reader = r
-                break
-
-        # Inspection passive de l'état matériel (SCARD_STATE_UNAWARE)
-        readerstates = [(target_reader, SCARD_STATE_UNAWARE)]
-        hresult, states = SCardGetStatusChange(hcontext, 0, readerstates)
-        card_present = False
-
-        if hresult == SCARD_S_SUCCESS and states:
-            _, eventstate, _ = states[0]
-            card_present = bool(eventstate & SCARD_STATE_PRESENT)
-
-        return {
-            "status": "OK",
-            "agent": "CNIBE Local Client Agent v1.0",
-            "readers_count": len(reader_list),
-            "readers": reader_list,
-            "selected_reader": target_reader,
-            "card_present": card_present,
-            "is_scanning": False,
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
-
-    except Exception as e:
-        return {
-            "status": "OK",
-            "agent": "CNIBE Local Client Agent v1.0",
-            "readers_count": 0,
-            "readers": [],
-            "selected_reader": None,
-            "card_present": False,
-            "is_scanning": False,
-            "message": str(e),
-            "timestamp": time.strftime("%Y-%m-%d %H:%M:%S")
-        }
+        finally:
+            if hcontext is not None:
+                try:
+                    SCardReleaseContext(hcontext)
+                except Exception:
+                    pass
     finally:
-        if hcontext is not None:
-            try:
-                SCardReleaseContext(hcontext)
-            except Exception:
-                pass
+        scan_lock.release()
 
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
@@ -294,6 +314,11 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
             )
 
             print(f"[AGENT] Scan réussi avec succès pour Doc={doc} !")
+            photo_fn = card_data.get("photo", {}).get("filename", "")
+            sig_fn = card_data.get("signature", {}).get("filename", "")
+            if photo_fn or sig_fn:
+                print(f"[AGENT] Fichiers sauvegardés : Photo={photo_fn or 'N/A'}, Signature={sig_fn or 'N/A'}")
+
             self._send_json(200, {
                 "status": "SUCCESS",
                 "data": card_data

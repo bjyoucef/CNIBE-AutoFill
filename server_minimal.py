@@ -92,6 +92,7 @@ def save_card():
         dg1 = card_data.get("dg1_mrz", {})
         dg11 = card_data.get("dg11_personnel", {})
         photo = card_data.get("photo", {})
+        sig = card_data.get("signature", {})
 
         doc_num = dg1.get("document_number", "INCONNU")
         nom_lat = (dg11.get("nom", {}) or {}).get("latin", dg1.get("nom_latin", ""))
@@ -99,6 +100,9 @@ def save_card():
         nom_ar = (dg11.get("nom", {}) or {}).get("arabe", "")
         prenom_ar = (dg11.get("prenoms", {}) or {}).get("arabe", "")
         nin = dg11.get("nin", "")
+
+        photo_desc = photo.get("filename") or ("Oui" if photo.get("base64") else "Non")
+        sig_desc = sig.get("filename") or ("Oui" if sig.get("base64") else "Non")
 
         print("\n" + "=" * 70)
         print("📥 [SERVEUR FLASK] NOUVELLE CARTE CNIBE REÇUE DEPUIS LE LAN !")
@@ -108,7 +112,8 @@ def save_card():
         print(f"  - NIN              : {nin}")
         print(f"  - Nom & Prénom     : {nom_lat} {prenom_lat} ({nom_ar} {prenom_ar})")
         print(f"  - Date Naissance   : {dg1.get('date_of_birth', '')}")
-        print(f"  - Photo Biométrique: {'Oui' if photo.get('base64') else 'Non'}")
+        print(f"  - Photo Biométrique: {photo_desc}")
+        print(f"  - Signature        : {sig_desc}")
         print("=" * 70 + "\n")
 
         # Résumé pour l'historique
@@ -123,6 +128,8 @@ def save_card():
             "prenom_arabe": prenom_ar,
             "date_naissance": dg1.get("date_of_birth", ""),
             "has_photo": bool(photo.get("base64")),
+            "photo_filename": photo.get("filename", ""),
+            "signature_filename": sig.get("filename", ""),
             "full_data": card_data
         }
 
@@ -155,7 +162,9 @@ def history():
             "nom_arabe": r.get("nom_arabe"),
             "prenom_arabe": r.get("prenom_arabe"),
             "date_naissance": r.get("date_naissance"),
-            "has_photo": r.get("has_photo")
+            "has_photo": r.get("has_photo"),
+            "photo_filename": r.get("photo_filename", ""),
+            "signature_filename": r.get("signature_filename", "")
         })
     return jsonify(summaries)
 
