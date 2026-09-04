@@ -79,6 +79,136 @@ def ping():
     })
 
 
+# Cache et registres des jetons IDCard connus pour le Ministère
+KNOWN_ID_CARDS = {}
+
+def get_known_id_cards():
+    """Charge les jetons IDCard cryptographiques découverts dans les fichiers du projet."""
+    global KNOWN_ID_CARDS
+    if KNOWN_ID_CARDS:
+        return KNOWN_ID_CARDS
+    import re
+    search_files = ["site ali.md", "ste de minister AKLI.md", "ste de minister.md"]
+    for fn in search_files:
+        if os.path.exists(fn):
+            try:
+                with open(fn, "r", encoding="utf-8", errors="ignore") as f:
+                    content = f.read()
+                m_card = re.search(r'IDCard\s*:\s*"([^"]+)"', content)
+                m_num = re.search(r'NUM_CARTE\s*:\s*"([^"]+)"', content)
+                if m_card and m_num:
+                    num = m_num.group(1).strip()
+                    card = m_card.group(1).strip()
+                    KNOWN_ID_CARDS[num] = card
+            except Exception:
+                pass
+    return KNOWN_ID_CARDS
+
+
+def fetch_ministere_data(document_number: str, id_card: str = None):
+    """
+    Interroge le service officiel du Ministère de l'Intérieur algérien :
+    https://macnibe.interieur.gov.dz/WFReadCardFr.aspx/GET_IDCardControl
+    Retourne les 18 champs officiels dont l'adresse exacte (index 9) et la situation familiale.
+    """
+    import urllib.request
+    import ssl
+
+    doc_norm = str(document_number).strip()
+    if not id_card:
+        known = get_known_id_cards()
+        id_card = known.get(doc_norm)
+
+    if not id_card:
+        return None
+
+    url = "https://macnibe.interieur.gov.dz/WFReadCardFr.aspx/GET_IDCardControl"
+    payload = json.dumps({"IDCard": id_card, "NUM_CARTE": doc_norm}).encode('utf-8')
+    headers = {
+        "Host": "macnibe.interieur.gov.dz",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://macnibe.interieur.gov.dz",
+        "Referer": "https://macnibe.interieur.gov.dz/WFReadCardFr.aspx"
+    }
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+            if resp.status != 200:
+                return None
+            res_text = resp.read().decode('utf-8')
+            parsed = json.loads(res_text)
+            d_str = parsed.get("d", "")
+            if not d_str or d_str in ("00", "-1", "6300", "91010", "V"):
+                return None
+            parts = d_str.split('|')
+            if len(parts) < 15:
+                return None
+
+            return {
+                "status": "SUCCESS",
+                "source": "MINISTERE_INTERIEUR",
+                "nom_arabe": parts[0].strip(),
+                "nom_latin": parts[1].strip(),
+                "prenom_arabe": parts[2].strip(),
+                "prenom_latin": parts[3].strip(),
+                "date_naissance": parts[4].strip(),
+                "sexe_arabe": parts[5].strip(),
+                "groupe_sanguin": parts[6].strip(),
+                "situation_familiale_arabe": parts[7].strip(),
+                "situation_familiale_latin": parts[8].strip(),
+                "adresse": parts[9].strip(),  # Adresse officielle (ex: "شارع الخير أمبارك دواودة")
+                "sexe_latin": parts[10].strip() if len(parts) > 10 else "",
+                "lieu_naissance_arabe": parts[11].strip() if len(parts) > 11 else "",
+                "lieu_naissance_latin": parts[12].strip() if len(parts) > 12 else "",
+                "has_photo": bool(len(parts) > 13 and parts[13]),
+                "photo_base64": parts[13] if len(parts) > 13 else "",
+                "nin": parts[14].strip() if len(parts) > 14 else "",
+                "nom_epoux_arabe": parts[15].strip() if len(parts) > 15 else "",
+                "nom_epoux_latin": parts[16].strip() if len(parts) > 16 else "",
+                "situation_familiale": parts[17].strip() if len(parts) > 17 else f"{parts[7]} / {parts[8]}"
+            }
+    except Exception as e:
+        print(f"[MINISTÈRE API ERREUR] {e}", file=sys.stderr)
+        return None
+
+
+@app.route('/api/minister_lookup', methods=['POST'])
+def minister_lookup():
+    """
+    Endpoint pour interroger le Ministère de l'Intérieur algérien (macnibe.interieur.gov.dz).
+    Permet d'extraire l'adresse officielle de rue, la situation familiale et le conjoint.
+    """
+    try:
+        req_data = request.get_json() or {}
+        doc_num = str(req_data.get("document_number", "")).strip()
+        id_card = req_data.get("id_card", "").strip() or None
+
+        if not doc_num:
+            return jsonify({"status": "ERROR", "message": "Numéro de document requis"}), 400
+
+        data = fetch_ministere_data(doc_num, id_card)
+        if not data:
+            return jsonify({
+                "status": "NOT_FOUND",
+                "message": "Données non disponibles sur le serveur du Ministère ou carte non répertoriée."
+            }), 404
+
+        return jsonify({
+            "status": "SUCCESS",
+            "ministere": data
+        }), 200
+
+    except Exception as e:
+        return jsonify({"status": "ERROR", "message": str(e)}), 500
+
+
 @app.route('/api/save_card', methods=['POST'])
 def save_card():
     """
@@ -91,15 +221,40 @@ def save_card():
 
         dg1 = card_data.get("dg1_mrz", {})
         dg11 = card_data.get("dg11_personnel", {})
+        dg12 = card_data.get("dg12_document", {})
         photo = card_data.get("photo", {})
         sig = card_data.get("signature", {})
+        ministere = card_data.get("ministere_data") or {}
 
         doc_num = dg1.get("document_number", "INCONNU")
-        nom_lat = (dg11.get("nom", {}) or {}).get("latin", dg1.get("nom_latin", ""))
-        prenom_lat = (dg11.get("prenoms", {}) or {}).get("latin", dg1.get("prenoms_latin", ""))
-        nom_ar = (dg11.get("nom", {}) or {}).get("arabe", "")
-        prenom_ar = (dg11.get("prenoms", {}) or {}).get("arabe", "")
-        nin = dg11.get("nin", "")
+        nom_lat = ministere.get("nom_latin") or (dg11.get("nom", {}) or {}).get("latin", dg1.get("nom_latin", ""))
+        prenom_lat = ministere.get("prenom_latin") or (dg11.get("prenoms", {}) or {}).get("latin", dg1.get("prenoms_latin", ""))
+        nom_ar = ministere.get("nom_arabe") or (dg11.get("nom", {}) or {}).get("arabe", "")
+        prenom_ar = ministere.get("prenom_arabe") or (dg11.get("prenoms", {}) or {}).get("arabe", "")
+        nin = ministere.get("nin") or dg11.get("nin", "")
+
+        # Détermination de l'adresse (priorité Ministère, sinon puce DG11/DG12)
+        adresse = ministere.get("adresse")
+        source_adresse = "MINISTERE" if adresse else "PUCE_LOCALE"
+        if not adresse:
+            addr_dg11 = dg11.get("adresse_residence", {})
+            if isinstance(addr_dg11, dict):
+                adresse = f"{addr_dg11.get('arabe', '')} - {addr_dg11.get('latin', '')}".strip(" -")
+            if not adresse:
+                aut = dg12.get("autorite_emission", {})
+                if isinstance(aut, dict):
+                    adresse = f"{aut.get('arabe', '')} - {aut.get('latin', '')}".strip(" -")
+
+        # Situation familiale & conjoint
+        situation = ministere.get("situation_familiale")
+        if not situation:
+            sit = dg11.get("situation_familiale", {})
+            situation = f"{sit.get('arabe', '')} / {sit.get('latin', '')}".strip(" /")
+
+        conjoint = ministere.get("nom_epoux_arabe") or ministere.get("nom_epoux_latin")
+        if not conjoint:
+            cj = dg11.get("conjoint", {})
+            conjoint = f"{cj.get('arabe', '')} {cj.get('latin', '')}".strip()
 
         photo_desc = photo.get("filename") or ("Oui" if photo.get("base64") else "Non")
         sig_desc = sig.get("filename") or ("Oui" if sig.get("base64") else "Non")
@@ -107,13 +262,15 @@ def save_card():
         print("\n" + "=" * 70)
         print("📥 [SERVEUR FLASK] NOUVELLE CARTE CNIBE REÇUE DEPUIS LE LAN !")
         print("=" * 70)
-        print(f"  - Client IP        : {request.remote_addr}")
-        print(f"  - N° Document      : {doc_num}")
-        print(f"  - NIN              : {nin}")
-        print(f"  - Nom & Prénom     : {nom_lat} {prenom_lat} ({nom_ar} {prenom_ar})")
-        print(f"  - Date Naissance   : {dg1.get('date_of_birth', '')}")
-        print(f"  - Photo Biométrique: {photo_desc}")
-        print(f"  - Signature        : {sig_desc}")
+        print(f"  - Client IP          : {request.remote_addr}")
+        print(f"  - N° Document        : {doc_num}")
+        print(f"  - NIN                : {nin}")
+        print(f"  - Nom & Prénom       : {nom_lat} {prenom_lat} ({nom_ar} {prenom_ar})")
+        print(f"  - Date Naissance     : {dg1.get('date_of_birth', '')}")
+        print(f"  - Adresse            : {adresse or 'Non renseignée'} ({source_adresse})")
+        print(f"  - Situation Famille  : {situation or 'Non renseignée'}")
+        print(f"  - Photo Biométrique  : {photo_desc}")
+        print(f"  - Signature          : {sig_desc}")
         print("=" * 70 + "\n")
 
         # Résumé pour l'historique
@@ -127,6 +284,10 @@ def save_card():
             "nom_arabe": nom_ar,
             "prenom_arabe": prenom_ar,
             "date_naissance": dg1.get("date_of_birth", ""),
+            "adresse": adresse or "",
+            "source_adresse": source_adresse,
+            "situation_familiale": situation or "",
+            "conjoint": conjoint or "",
             "has_photo": bool(photo.get("base64")),
             "photo_filename": photo.get("filename", ""),
             "signature_filename": sig.get("filename", ""),
@@ -138,7 +299,9 @@ def save_card():
         return jsonify({
             "status": "SAVED",
             "message": "Données enregistrées avec succès sur le serveur Flask",
-            "document_number": doc_num
+            "document_number": doc_num,
+            "adresse": adresse,
+            "source_adresse": source_adresse
         }), 200
 
     except Exception as e:
@@ -150,7 +313,6 @@ def save_card():
 def history():
     """Retourne la liste des cartes enregistrées sur le serveur."""
     records = load_saved_records()
-    # Retourne les champs principaux sans le payload brut lourd
     summaries = []
     for r in records:
         summaries.append({
@@ -162,6 +324,10 @@ def history():
             "nom_arabe": r.get("nom_arabe"),
             "prenom_arabe": r.get("prenom_arabe"),
             "date_naissance": r.get("date_naissance"),
+            "adresse": r.get("adresse", ""),
+            "source_adresse": r.get("source_adresse", "PUCE_LOCALE"),
+            "situation_familiale": r.get("situation_familiale", ""),
+            "conjoint": r.get("conjoint", ""),
             "has_photo": r.get("has_photo"),
             "photo_filename": r.get("photo_filename", ""),
             "signature_filename": r.get("signature_filename", "")

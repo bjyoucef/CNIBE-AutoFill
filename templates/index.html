@@ -372,6 +372,59 @@
             color: var(--text-secondary);
             text-align: center;
             margin-top: 4px;
+            padding: 3px 8px;
+            border-radius: 4px;
+        }
+
+        .badge-tag-ministere {
+            background: rgba(16, 185, 129, 0.18);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.4);
+            font-weight: 600;
+        }
+
+        .badge-tag-locale {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.35);
+        }
+
+        /* Toggle switch */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 42px;
+            height: 22px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-color: #334155;
+            transition: .3s;
+            border-radius: 22px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 16px;
+            width: 16px;
+            left: 3px;
+            bottom: 3px;
+            background-color: white;
+            transition: .3s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #10b981;
+        }
+        input:checked + .slider:before {
+            transform: translateX(20px);
         }
 
         .identity-fields {
@@ -525,6 +578,18 @@
                     <input type="text" id="input-doe" class="form-control" value="04/10/2027" placeholder="JJ/MM/AAAA" required>
                 </div>
 
+                <!-- Option Mode Connecté Ministère -->
+                <div style="display: flex; align-items: center; justify-content: space-between; margin: 14px 0 18px; padding: 10px 14px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md);">
+                    <div>
+                        <strong style="font-size: 13px; color: #fff;">🌐 Mode Ministère Connecté</strong>
+                        <div style="font-size: 11px; color: var(--text-muted);">Récupère l'adresse officielle de rue (macnibe)</div>
+                    </div>
+                    <label class="switch">
+                        <input type="checkbox" id="toggle-ministere" checked>
+                        <span class="slider"></span>
+                    </label>
+                </div>
+
                 <button type="submit" id="btn-scan" class="btn btn-primary">
                     <span id="btn-scan-icon">📲</span>
                     <span id="btn-scan-text">Lire la Carte (NFC)</span>
@@ -546,7 +611,7 @@
                 <strong>💡 Fonctionnement :</strong><br>
                 1. Ce navigateur contacte l'agent local sur <code>127.0.0.1:5001</code>.<br>
                 2. L'agent lit la carte NFC via le lecteur USB de ce PC client.<br>
-                3. Les données extraites sont affichées et synchronisées automatiquement avec le serveur Flask.
+                3. Les données extraites sont enrichies via le Ministère et synchronisées sur Flask.
             </div>
         </div>
 
@@ -618,6 +683,28 @@
                             <label>Groupe Sanguin / فصيلة الدم</label>
                             <input type="text" id="val-groupe" class="form-control" readonly placeholder="---">
                         </div>
+                        <div class="form-group">
+                            <label>Situation de Famille / الوضعية العائلية</label>
+                            <input type="text" id="val-situation" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
+                            <label>Nom de l'époux(se) / اسم الزوج</label>
+                            <input type="text" id="val-epoux" class="form-control arabic-text" readonly placeholder="---">
+                        </div>
+                    </div>
+
+                    <!-- Adresse Résidentielle (العنوان) -->
+                    <div class="form-group" style="margin-top: 16px;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <label style="margin-bottom: 0;">Adresse Résidentielle / العنوان الكامل</label>
+                            <span id="badge-adresse-source" class="badge-tag" style="display: none;"></span>
+                        </div>
+                        <div style="display: flex; gap: 8px;">
+                            <input type="text" id="val-adresse" class="form-control arabic-text" readonly placeholder="En attente de lecture..." style="font-size: 15px; padding: 11px; color: #38bdf8; font-weight: 700; flex: 1;">
+                            <button type="button" id="btn-sync-ministere" class="btn btn-secondary" onclick="manualSyncMinistere()" style="width: auto; margin-top: 0; padding: 8px 14px; font-size: 12px; white-space: nowrap;" title="Interroger macnibe.interieur.gov.dz">
+                                🌐 Vérifier Ministère
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -662,13 +749,14 @@
                         <th>NIN</th>
                         <th>Nom & Prénom (Latin)</th>
                         <th>الاسم واللقب (عربي)</th>
-                        <th>Date Naiss.</th>
+                        <th>Adresse (العنوان)</th>
+                        <th>Situation</th>
                         <th>Photo</th>
                     </tr>
                 </thead>
                 <tbody id="history-tbody">
                     <tr>
-                        <td colspan="7" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td>
+                        <td colspan="8" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td>
                     </tr>
                 </tbody>
             </table>
@@ -800,33 +888,45 @@
         }
     }
 
+    let currentCardData = null;
+
     // Affichage des données sur l'interface
-    function displayCardData(data) {
+    async function displayCardData(data) {
+        currentCardData = data;
         const dg1 = data.dg1_mrz || {};
         const dg11 = data.dg11_personnel || {};
         const dg12 = data.dg12_document || {};
         const photo = data.photo || {};
         const sig = data.signature || {};
+        const min = data.ministere_data || {};
 
         // NIN
-        document.getElementById("val-nin").textContent = dg11.nin || "---";
+        document.getElementById("val-nin").textContent = min.nin || dg11.nin || "---";
 
         // Noms & Prénoms
-        document.getElementById("val-nom-lat").value = (dg11.nom && dg11.nom.latin) || dg1.nom_latin || "";
-        document.getElementById("val-nom-ar").value = (dg11.nom && dg11.nom.arabe) || "";
-        document.getElementById("val-prenom-lat").value = (dg11.prenoms && dg11.prenoms.latin) || dg1.prenoms_latin || "";
-        document.getElementById("val-prenom-ar").value = (dg11.prenoms && dg11.prenoms.arabe) || "";
+        document.getElementById("val-nom-lat").value = min.nom_latin || (dg11.nom && dg11.nom.latin) || dg1.nom_latin || "";
+        document.getElementById("val-nom-ar").value = min.nom_arabe || (dg11.nom && dg11.nom.arabe) || "";
+        document.getElementById("val-prenom-lat").value = min.prenom_latin || (dg11.prenoms && dg11.prenoms.latin) || dg1.prenoms_latin || "";
+        document.getElementById("val-prenom-ar").value = min.prenom_arabe || (dg11.prenoms && dg11.prenoms.arabe) || "";
 
         // Date & Lieu
-        document.getElementById("val-dob").value = dg1.date_of_birth || dg11.date_naissance_complete || "";
-        const lieuLat = (dg11.lieu_naissance && dg11.lieu_naissance.latin) || "";
-        const lieuAr = (dg11.lieu_naissance && dg11.lieu_naissance.arabe) || "";
+        document.getElementById("val-dob").value = min.date_naissance || dg1.date_of_birth || dg11.date_naissance_complete || "";
+        const lieuLat = min.lieu_naissance_latin || (dg11.lieu_naissance && dg11.lieu_naissance.latin) || "";
+        const lieuAr = min.lieu_naissance_arabe || (dg11.lieu_naissance && dg11.lieu_naissance.arabe) || "";
         document.getElementById("val-lieu").value = lieuAr ? `${lieuLat} (${lieuAr})` : lieuLat;
 
         // Sexe & Groupe sanguin
         const sg = dg11.sexe_groupe_sanguin || {};
-        document.getElementById("val-sexe").value = sg.sexe_latin ? `${sg.sexe_latin} / ${sg.sexe_arabe || ''}` : (dg1.sex || "");
-        document.getElementById("val-groupe").value = sg.groupe_sanguin || "---";
+        const sexLat = min.sexe_latin || sg.sexe_latin || dg1.sex || "";
+        const sexAr = min.sexe_arabe || sg.sexe_arabe || "";
+        document.getElementById("val-sexe").value = sexLat ? `${sexLat} / ${sexAr}` : "";
+        document.getElementById("val-groupe").value = min.groupe_sanguin || sg.groupe_sanguin || "---";
+
+        // Situation familiale & Conjoint
+        const sit = min.situation_familiale || (dg11.situation_familiale && `${dg11.situation_familiale.latin || ''} / ${dg11.situation_familiale.arabe || ''}`.trim()) || "---";
+        document.getElementById("val-situation").value = sit;
+        const cj = min.nom_epoux_arabe || min.nom_epoux_latin || (dg11.conjoint && `${dg11.conjoint.latin || ''} ${dg11.conjoint.arabe || ''}`.trim()) || "—";
+        document.getElementById("val-epoux").value = cj;
 
         // Document
         const autLat = (dg12.autorite_emission && dg12.autorite_emission.latin) || "";
@@ -835,15 +935,32 @@
         document.getElementById("val-date-emission").value = dg12.date_emission || "---";
         document.getElementById("val-date-expir").value = dg1.date_of_expiry || "";
 
+        // Adresse Résidentielle
+        const badgeSource = document.getElementById("badge-adresse-source");
+        if (min.adresse) {
+            document.getElementById("val-adresse").value = min.adresse;
+            badgeSource.style.display = "inline-block";
+            badgeSource.className = "badge-tag badge-tag-ministere";
+            badgeSource.innerHTML = "✅ Certifiée Ministère (macnibe.interieur.gov.dz)";
+        } else {
+            const addrDg11 = (dg11.adresse_residence && (dg11.adresse_residence.arabe || dg11.adresse_residence.latin)) || "";
+            const addrFallback = addrDg11 || (autAr ? `${autAr} - ${autLat}` : autLat);
+            document.getElementById("val-adresse").value = addrFallback || "Non spécifiée sur la puce";
+            badgeSource.style.display = "inline-block";
+            badgeSource.className = "badge-tag badge-tag-locale";
+            badgeSource.innerHTML = "ℹ️ Puce Locale (Commune délivrance)";
+        }
+
         // Photo
-        if (photo.base64) {
+        if (min.photo_base64 || photo.base64) {
+            const b64 = min.photo_base64 || photo.base64;
             const imgP = document.getElementById("img-photo");
-            imgP.src = `data:image/jpeg;base64,${photo.base64}`;
+            imgP.src = `data:image/jpeg;base64,${b64}`;
             imgP.style.display = "block";
             document.getElementById("photo-placeholder").style.display = "none";
             const tagP = document.getElementById("badge-photo-tag");
-            if (tagP && photo.filename) {
-                tagP.textContent = `Photo (${photo.filename})`;
+            if (tagP) {
+                tagP.textContent = min.photo_base64 ? "Photo (Certifiée RNEC)" : `Photo (${photo.filename || 'DG2'})`;
             }
         }
 
@@ -860,6 +977,68 @@
         }
 
         document.getElementById("badge-status").innerHTML = `<span style="color: var(--accent-emerald);">● Lecture réussie (${data.timestamp})</span>`;
+
+        // Interrogation automatique du Ministère si activé
+        const isMinistereEnabled = document.getElementById("toggle-ministere").checked;
+        const docNum = dg1.document_number;
+        if (isMinistereEnabled && docNum && !min.adresse) {
+            await autoLookupMinistere(docNum, data);
+        }
+    }
+
+    // Interrogation asynchrone du Ministère pour récupérer l'adresse certifiée
+    async function autoLookupMinistere(docNum, baseCardData) {
+        const badgeSource = document.getElementById("badge-adresse-source");
+        badgeSource.style.display = "inline-block";
+        badgeSource.className = "badge-tag";
+        badgeSource.style.color = "var(--accent-cyan)";
+        badgeSource.innerHTML = "⏳ Interrogation macnibe.interieur.gov.dz...";
+
+        try {
+            const res = await fetch("/api/minister_lookup", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ document_number: docNum })
+            });
+
+            if (res.ok) {
+                const json = await res.json();
+                if (json.status === "SUCCESS" && json.ministere) {
+                    const min = json.ministere;
+                    if (min.adresse) document.getElementById("val-adresse").value = min.adresse;
+                    if (min.situation_familiale) document.getElementById("val-situation").value = min.situation_familiale;
+                    if (min.nom_epoux_arabe) document.getElementById("val-epoux").value = min.nom_epoux_arabe;
+                    
+                    badgeSource.className = "badge-tag badge-tag-ministere";
+                    badgeSource.innerHTML = "✅ Certifiée Ministère (macnibe.interieur.gov.dz)";
+
+                    showAlert("✅ Adresse officielle de rue certifiée récupérée auprès du Ministère !", "success");
+
+                    // Sauvegarder les données enrichies sur le serveur Flask
+                    const enriched = { ...baseCardData, ministere_data: min };
+                    await saveToServer(enriched);
+                }
+            } else {
+                badgeSource.className = "badge-tag badge-tag-locale";
+                badgeSource.innerHTML = "ℹ️ Puce Locale (Commune délivrance)";
+            }
+        } catch (e) {
+            console.warn("Lookup Ministère non disponible:", e);
+            badgeSource.className = "badge-tag badge-tag-locale";
+            badgeSource.innerHTML = "ℹ️ Puce Locale (Hors-ligne)";
+        }
+    }
+
+    // Synchronisation manuelle via le bouton
+    async function manualSyncMinistere() {
+        const docInput = document.getElementById("input-doc").value.trim();
+        const currentDoc = (currentCardData && currentCardData.dg1_mrz && currentCardData.dg1_mrz.document_number) || docInput;
+        if (!currentDoc) {
+            showAlert("Veuillez saisir ou scanner un numéro de carte.", "error");
+            return;
+        }
+        showAlert("Connexion au Ministère macnibe.interieur.gov.dz en cours...", "success");
+        await autoLookupMinistere(currentDoc, currentCardData || { dg1_mrz: { document_number: currentDoc } });
     }
 
     // Sauvegarde vers le serveur Flask
@@ -886,7 +1065,7 @@
                 const history = await res.json();
                 const tbody = document.getElementById("history-tbody");
                 if (!history || history.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td></tr>`;
                     return;
                 }
 
@@ -897,7 +1076,11 @@
                         <td style="font-family: monospace; color: var(--accent-cyan);">${item.nin || '---'}</td>
                         <td>${item.nom_latin || ''} ${item.prenom_latin || ''}</td>
                         <td class="arabic-text" style="font-size: 13px;">${item.nom_arabe || ''} ${item.prenom_arabe || ''}</td>
-                        <td>${item.date_naissance || '---'}</td>
+                        <td class="arabic-text" style="font-size: 13px; color: ${item.source_adresse === 'MINISTERE' ? '#38bdf8' : 'var(--text-secondary)'}; font-weight: ${item.source_adresse === 'MINISTERE' ? 'bold' : 'normal'};">
+                            ${item.adresse || '—'}
+                            ${item.source_adresse === 'MINISTERE' ? '<br><span style="font-size: 10px; color: #34d399;">● Certifiée Ministère</span>' : ''}
+                        </td>
+                        <td style="font-size: 12px;">${item.situation_familiale || '—'}</td>
                         <td>${item.photo_filename ? '📷 ' + item.photo_filename : (item.has_photo ? '📷 Présente' : '—')}</td>
                     </tr>
                 `).join("");
@@ -922,6 +1105,7 @@
         document.getElementById("input-doc").value = "106172516";
         document.getElementById("input-dob").value = "19/11/1957";
         document.getElementById("input-doe").value = "04/10/2027";
+        showAlert("Données de test rechargées pour Ali AMARI (106172516).", "success");
     }
 
     // Initialisation

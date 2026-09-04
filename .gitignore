@@ -33,3 +33,5 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
+inspect_live_ministere.py
+inspect_endpoints.py
