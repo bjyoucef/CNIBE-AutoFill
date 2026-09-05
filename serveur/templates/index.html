@@ -265,44 +265,7 @@
             color: #fff;
         }
 
-        /* Sélecteur de type de document */
-        .doc-type-selector {
-            display: flex;
-            gap: 6px;
-            margin-bottom: 18px;
-            background: #090e1a;
-            padding: 4px;
-            border-radius: var(--radius-md);
-            border: 1px solid var(--border-color);
-        }
 
-        .doc-tab {
-            flex: 1;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 8px;
-            padding: 10px 12px;
-            background: transparent;
-            border: none;
-            color: var(--text-secondary);
-            font-size: 13px;
-            font-weight: 600;
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.25s ease;
-        }
-
-        .doc-tab.active {
-            background: linear-gradient(135deg, #1d4ed8, #0284c7);
-            color: #fff;
-            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
-        }
-
-        .doc-tab:hover:not(.active) {
-            color: var(--text-primary);
-            background: rgba(255, 255, 255, 0.04);
-        }
 
         /* Progress Bar & Loader */
         .progress-box {
@@ -538,20 +501,10 @@
                 <div class="card-title" id="card-panel-title">⚙️ Informations du Document</div>
             </div>
 
-            <!-- Onglets de sélection du type de document -->
-            <div class="doc-type-selector">
-                <button type="button" class="doc-tab active" id="tab-idcard" onclick="selectDocType('ID_CARD')">
-                    <span>🪪</span> Carte d'Identité
-                </button>
-                <button type="button" class="doc-tab" id="tab-passport" onclick="selectDocType('PASSPORT')">
-                    <span>📘</span> Passeport Biométrique
-                </button>
-            </div>
-
             <form id="form-scan" onsubmit="event.preventDefault(); triggerScan();">
                 <div class="form-group">
-                    <label for="input-doc" id="label-input-doc">N° de Carte (9 chiffres)</label>
-                    <input type="text" id="input-doc" class="form-control" value="" placeholder="Ex: 101616166" required maxlength="12">
+                    <label for="input-doc" id="label-input-doc">N° du Document (Carte ou Passeport)</label>
+                    <input type="text" id="input-doc" class="form-control" value="" placeholder="Ex: 101616166 ou 312009063" required maxlength="12">
                 </div>
 
                 <div class="form-group">
@@ -566,7 +519,7 @@
 
                 <button type="submit" id="btn-scan" class="btn btn-primary">
                     <span id="btn-scan-icon">📲</span>
-                    <span id="btn-scan-text">Lire la Carte</span>
+                    <span id="btn-scan-text">Lire le Document</span>
                 </button>
             </form>
 
@@ -579,9 +532,9 @@
 
             <div id="guide-box" style="margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.6; background: rgba(255,255,255,0.02); padding: 14px; border-radius: 10px; border: 1px solid var(--border-color);">
                 <strong style="color: var(--text-secondary); display: block; margin-bottom: 6px;">💡 Guide d'utilisation :</strong>
-                <span id="guide-step1">1. Déposez la carte d'identité bien à plat sur le lecteur.</span><br>
-                <span id="guide-step2">2. Renseignez les 3 informations inscrites sur le document.</span><br>
-                <span id="guide-step3">3. Cliquez sur <strong>Lire la Carte</strong> pour charger automatiquement les données et la photo.</span>
+                <span id="guide-step1">1. Déposez la carte d'identité ou le passeport bien à plat sur le lecteur NFC.</span><br>
+                <span id="guide-step2">2. Renseignez les 3 informations du document (N°, Naissance, Expiration).</span><br>
+                <span id="guide-step3">3. Cliquez sur <strong>Lire le Document</strong> (la détection Carte / Passeport est 100% automatique).</span>
             </div>
         </div>
 
@@ -646,6 +599,10 @@
                             <input type="text" id="val-lieu" class="form-control" readonly placeholder="---">
                         </div>
                         <div class="form-group">
+                            <label>Nationalité / الجنسية</label>
+                            <input type="text" id="val-nationalite" class="form-control" readonly placeholder="---">
+                        </div>
+                        <div class="form-group">
                             <label>Sexe / الجنس</label>
                             <input type="text" id="val-sexe" class="form-control" readonly placeholder="---">
                         </div>
@@ -681,6 +638,10 @@
                 </div>
                 <div class="fields-grid">
                     <div class="form-group">
+                        <label id="label-val-doc-num">N° du Document / رقم الوثيقة</label>
+                        <input type="text" id="val-doc-num" class="form-control" readonly placeholder="---" style="font-weight: 700; color: #38bdf8;">
+                    </div>
+                    <div class="form-group">
                         <label>Autorité de Délivrance / سلطة الإصدار</label>
                         <input type="text" id="val-autorite" class="form-control" readonly placeholder="---">
                     </div>
@@ -703,58 +664,17 @@
     const AGENT_URL = "http://127.0.0.1:5001";
     let agentOnline = false;
     let isScanningActive = false;
-    let selectedDocType = "ID_CARD";
-
-    function selectDocType(type) {
-        selectedDocType = type;
-        const tabIdCard = document.getElementById("tab-idcard");
-        const tabPassport = document.getElementById("tab-passport");
-        const labelDoc = document.getElementById("label-input-doc");
-        const inputDoc = document.getElementById("input-doc");
-        const btnText = document.getElementById("btn-scan-text");
-        const btnIcon = document.getElementById("btn-scan-icon");
-        const guide1 = document.getElementById("guide-step1");
-        const guide3 = document.getElementById("guide-step3");
-        const cardTitle = document.getElementById("card-panel-title");
-        const brandLogo = document.getElementById("brand-logo-icon");
-
-        if (type === "PASSPORT") {
-            tabPassport.classList.add("active");
-            tabIdCard.classList.remove("active");
-            labelDoc.textContent = "N° de Passeport (9 caractères)";
-            inputDoc.placeholder = "Ex: 123456789 ou A1234567";
-            btnText.textContent = "Lire le Passeport";
-            btnIcon.textContent = "📘";
-            brandLogo.textContent = "📘";
-            cardTitle.textContent = "⚙️ Informations du Passeport";
-            guide1.innerHTML = "1. Ouvrez le passeport à la page photo et posez-le bien à plat sur le lecteur NFC.";
-            guide3.innerHTML = "3. Cliquez sur <strong>Lire le Passeport</strong> pour charger l'identité et la photo biométrique.";
-        } else {
-            tabIdCard.classList.add("active");
-            tabPassport.classList.remove("active");
-            labelDoc.textContent = "N° de Carte (9 chiffres)";
-            inputDoc.placeholder = "Ex: 101616166";
-            btnText.textContent = "Lire la Carte";
-            btnIcon.textContent = "🪪";
-            brandLogo.textContent = "🪪";
-            cardTitle.textContent = "⚙️ Informations de la Carte";
-            guide1.innerHTML = "1. Déposez la carte d'identité bien à plat sur le lecteur.";
-            guide3.innerHTML = "3. Cliquez sur <strong>Lire la Carte</strong> pour charger automatiquement les données et la photo.";
-        }
-    }
-
     // Messages clairs et compréhensibles sans jargon technique
     function getFriendlyErrorMessage(err) {
         const msg = (typeof err === "string" ? err : (err && err.message) || "").toLowerCase();
-        const docName = selectedDocType === "PASSPORT" ? "le passeport" : "la carte";
         if (msg.includes("bac") || msg.includes("security") || msg.includes("authentification") || msg.includes("sécurité")) {
-            return `Informations non reconnues par ${docName}. Veuillez vérifier le N° de document, la date de naissance et la date d'expiration.`;
+            return "Informations non reconnues par le document. Veuillez vérifier le N° de document, la date de naissance et la date d'expiration.";
         }
         if (msg.includes("non détectée") || msg.includes("not found") || msg.includes("no card") || msg.includes("aucun lecteur") || msg.includes("pas de carte")) {
-            return `Aucun document détecté sur le lecteur. Veuillez poser ${docName} bien à plat contre la cible NFC et réessayer.`;
+            return "Aucun document détecté sur le lecteur. Veuillez poser votre document (carte ou passeport) bien à plat contre la cible NFC et réessayer.";
         }
         if (msg.includes("interrompue") || msg.includes("communication") || msg.includes("connection")) {
-            return `Communication interrompue. Ne retirez pas ${docName} pendant la lecture et réessayez.`;
+            return "Communication interrompue. Ne retirez pas le document pendant la lecture et réessayez.";
         }
         if (msg.includes("en cours")) {
             return "Une lecture est déjà en cours. Veuillez patienter un instant.";
@@ -762,7 +682,7 @@
         if (msg.includes("agent") || msg.includes("failed to fetch") || msg.includes("network")) {
             return "Impossible de joindre le lecteur. Assurez-vous que l'application de lecture locale est bien démarrée.";
         }
-        return `Impossible de lire ${docName}. Veuillez vérifier les informations saisies et réessayer.`;
+        return "Impossible de lire le document. Veuillez vérifier les informations saisies et réessayer.";
     }
 
     // Vérification de l'état du lecteur et de la carte
@@ -828,7 +748,6 @@
         const progressBox = document.getElementById("progress-box");
         const progressBar = document.getElementById("progress-bar");
         const progressText = document.getElementById("progress-text");
-        const docWord = selectedDocType === "PASSPORT" ? "du passeport" : "de la carte";
 
         if (!agentOnline) {
             showAlert("Le service de lecture n'est pas actif. Veuillez démarrer l'application lecteur (lancer_agent.bat) sur votre ordinateur.", "error");
@@ -844,7 +763,7 @@
         btnScanText.textContent = "Lecture en cours...";
         progressBox.style.display = "block";
         progressBar.style.width = "30%";
-        progressText.textContent = `Connexion à la puce ${docWord}...`;
+        progressText.textContent = "Connexion à la puce du document...";
 
         try {
             progressBar.style.width = "60%";
@@ -853,7 +772,7 @@
             const res = await fetch(`${AGENT_URL}/scan`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ doc, dob, doe, doc_type: selectedDocType, wait: 15 })
+                body: JSON.stringify({ doc, dob, doe, doc_type: "AUTO", wait: 15 })
             });
 
             const result = await res.json();
@@ -880,7 +799,7 @@
         } finally {
             isScanningActive = false;
             btnScan.disabled = false;
-            btnScanText.textContent = selectedDocType === "PASSPORT" ? "Lire le Passeport" : "Lire la Carte";
+            btnScanText.textContent = "Lire le Document";
             setTimeout(() => { progressBox.style.display = "none"; }, 3000);
             checkAgentStatus();
         }
@@ -905,18 +824,25 @@
             (dg1.document_type_category === 'PASSPORT')
         );
 
-        // Synchroniser l'onglet actif si le document scanné est différent
-        if (isPassport && selectedDocType !== "PASSPORT") {
-            selectDocType("PASSPORT");
-        } else if (!isPassport && selectedDocType !== "ID_CARD") {
-            selectDocType("ID_CARD");
+        // Mise à jour visuelle dynamique selon le titre d'identité détecté automatiquement
+        const brandLogo = document.getElementById("brand-logo-icon");
+        const cardTitle = document.getElementById("card-panel-title");
+        const labelDocNum = document.getElementById("label-val-doc-num");
+        if (isPassport) {
+            if (brandLogo) brandLogo.textContent = "📘";
+            if (cardTitle) cardTitle.textContent = "📘 Passeport Biométrique Détecté";
+            if (labelDocNum) labelDocNum.textContent = "N° de Passeport / رقم جواز السفر";
+        } else {
+            if (brandLogo) brandLogo.textContent = "🪪";
+            if (cardTitle) cardTitle.textContent = "🪪 Carte d'Identité Détectée";
+            if (labelDocNum) labelDocNum.textContent = "N° de Carte (CNIBE) / رقم بطاقة التعريف";
         }
 
         // NIN / Numéro Personnel
         const ninBoxLabel = document.querySelector(".nin-label");
         if (isPassport) {
-            if (ninBoxLabel) ninBoxLabel.textContent = "Numéro Personnel / NIN (Optionnel) / الرقم التعريفي";
-            document.getElementById("val-nin").textContent = dg1.optional_data || min.nin || dg11.nin || `Passeport N° ${dg1.document_number || ''}`;
+            if (ninBoxLabel) ninBoxLabel.textContent = "Numéro d'Identification National (NIN) / الرقم التعريفي الوطني";
+            document.getElementById("val-nin").textContent = dg11.nin || min.nin || dg1.optional_data || `Passeport N° ${dg1.document_number || ''}`;
         } else {
             if (ninBoxLabel) ninBoxLabel.textContent = "Numéro d'Identification National (NIN) / الرقم التعريفي الوطني";
             document.getElementById("val-nin").textContent = min.nin || dg11.nin || "---";
@@ -925,7 +851,8 @@
         // Noms & Prénoms
         document.getElementById("val-nom-lat").value = min.nom_latin || (dg11.nom && dg11.nom.latin) || dg1.nom_latin || "";
         document.getElementById("val-nom-ar").value = min.nom_arabe || (dg11.nom && dg11.nom.arabe) || "";
-        document.getElementById("val-prenom-lat").value = min.prenom_latin || (dg11.prenoms && dg11.prenoms.latin) || dg1.prenoms_latin || "";
+        const prenomVal = (isPassport && dg1.prenoms_latin) ? dg1.prenoms_latin : (min.prenom_latin || (dg11.prenoms && dg11.prenoms.latin) || dg1.prenoms_latin || "");
+        document.getElementById("val-prenom-lat").value = prenomVal;
         document.getElementById("val-prenom-ar").value = min.prenom_arabe || (dg11.prenoms && dg11.prenoms.arabe) || "";
 
         // Date & Lieu
@@ -934,12 +861,24 @@
         const lieuAr = min.lieu_naissance_arabe || (dg11.lieu_naissance && dg11.lieu_naissance.arabe) || "";
         document.getElementById("val-lieu").value = lieuAr ? `${lieuLat} (${lieuAr})` : (lieuLat || (isPassport ? "Conforme OACI" : ""));
 
+        // Nationalité
+        const natCode = dg1.nationality || dg1.issuing_country || min.nationalite || "DZA";
+        let natDisplay = natCode;
+        if (natCode === "DZA") {
+            natDisplay = "Algérienne (DZA) / جزائرية";
+        } else if (natCode) {
+            natDisplay = `${natCode} (${dg1.issuing_country || ''})`.trim();
+        }
+        const valNatEl = document.getElementById("val-nationalite");
+        if (valNatEl) valNatEl.value = natDisplay;
+
         // Sexe & Groupe sanguin
         const sg = dg11.sexe_groupe_sanguin || {};
         const sexLat = min.sexe_latin || sg.sexe_latin || dg1.sex || "";
         const sexAr = min.sexe_arabe || sg.sexe_arabe || "";
         document.getElementById("val-sexe").value = sexLat ? `${sexLat} / ${sexAr}`.trim().replace(/\/$/, '') : "";
-        document.getElementById("val-groupe").value = min.groupe_sanguin || sg.groupe_sanguin || "---";
+        const bgVal = min.groupe_sanguin || sg.groupe_sanguin || (dg11.champs_supplementaires && dg11.champs_supplementaires.tag_0x5f18) || "---";
+        document.getElementById("val-groupe").value = bgVal;
 
         // Situation familiale & Conjoint
         const sit = min.situation_familiale || (dg11.situation_familiale && `${dg11.situation_familiale.latin || ''} / ${dg11.situation_familiale.arabe || ''}`.trim()) || "---";
@@ -953,6 +892,9 @@
             docDetailsTitle.textContent = isPassport ? "📄 Informations du Passeport Biométrique" : "📄 Informations de la Carte d'Identité";
         }
 
+        const docNumEl = document.getElementById("val-doc-num");
+        if (docNumEl) docNumEl.value = dg1.document_number || data.doc || "---";
+
         const autLat = (dg12.autorite_emission && dg12.autorite_emission.latin) || "";
         const autAr = (dg12.autorite_emission && dg12.autorite_emission.arabe) || "";
         if (isPassport) {
@@ -962,7 +904,11 @@
             document.getElementById("val-autorite").value = autAr ? `${autLat} - ${autAr}` : autLat;
         }
 
-        document.getElementById("val-date-emission").value = dg12.date_emission || "---";
+        let dateEmiss = dg12.date_emission || "---";
+        if (dateEmiss && dateEmiss.length === 8 && /^\d{8}$/.test(dateEmiss)) {
+            dateEmiss = `${dateEmiss.slice(6, 8)}/${dateEmiss.slice(4, 6)}/${dateEmiss.slice(0, 4)}`;
+        }
+        document.getElementById("val-date-emission").value = dateEmiss;
         document.getElementById("val-date-expir").value = dg1.date_of_expiry || "";
 
         // Adresse Résidentielle

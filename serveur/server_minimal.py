@@ -85,11 +85,18 @@ def save_card():
         dob = dg1.get("date_of_birth", "")
         doe = dg1.get("date_of_expiry", "")
 
-        nom_lat = ministere.get("nom_latin") or (dg11.get("nom", {}) or {}).get("latin", dg1.get("nom_latin", ""))
-        prenom_lat = ministere.get("prenom_latin") or (dg11.get("prenoms", {}) or {}).get("latin", dg1.get("prenoms_latin", ""))
+        is_passport = bool(card_data.get("is_passport") or dg1.get("document_type", "").startswith("P") or "TD3" in dg1.get("format", ""))
+        doc_kind = "PASSEPORT BIOMÉTRIQUE" if is_passport else "CARTE CNIBE"
+
+        if is_passport:
+            nom_lat = dg1.get("nom_latin") or ministere.get("nom_latin") or (dg11.get("nom", {}) or {}).get("latin", "")
+            prenom_lat = dg1.get("prenoms_latin") or ministere.get("prenom_latin") or (dg11.get("prenoms", {}) or {}).get("latin", "")
+        else:
+            nom_lat = ministere.get("nom_latin") or (dg11.get("nom", {}) or {}).get("latin", dg1.get("nom_latin", ""))
+            prenom_lat = ministere.get("prenom_latin") or (dg11.get("prenoms", {}) or {}).get("latin", dg1.get("prenoms_latin", ""))
         nom_ar = ministere.get("nom_arabe") or (dg11.get("nom", {}) or {}).get("arabe", "")
         prenom_ar = ministere.get("prenom_arabe") or (dg11.get("prenoms", {}) or {}).get("arabe", "")
-        nin = ministere.get("nin") or dg11.get("nin", "")
+        nin = dg11.get("nin") or ministere.get("nin", "")
 
         # Détermination de l'adresse (priorité Ministère, sinon puce DG11/DG12)
         adresse = ministere.get("adresse")
@@ -114,9 +121,6 @@ def save_card():
             cj = dg11.get("conjoint", {})
             conjoint = f"{cj.get('arabe', '')} {cj.get('latin', '')}".strip()
 
-        is_passport = bool(card_data.get("is_passport") or dg1.get("document_type", "").startswith("P") or "TD3" in dg1.get("format", ""))
-        doc_kind = "PASSEPORT BIOMÉTRIQUE" if is_passport else "CARTE CNIBE"
-
         has_photo = bool(photo.get("base64") or ministere.get("photo_base64"))
         has_sig = bool(sig.get("base64"))
         photo_desc = "Oui (Base64 mémoire)" if has_photo else "Non"
@@ -137,8 +141,17 @@ def save_card():
             print(f"  - Adresse            : {adresse or 'Non renseignée'} ({source_adresse})")
             print(f"  - Situation Famille  : {situation or 'Non renseignée'}")
         else:
+            if nin:
+                print(f"  - NIN                : {nin}")
             if dg1.get("optional_data"):
-                print(f"  - Numéro Personnel   : {dg1.get('optional_data')}")
+                print(f"  - Données Optionn.   : {dg1.get('optional_data')}")
+            if dg12.get("autorite_emission"):
+                aut = dg12.get("autorite_emission", {})
+                aut_str = f"{aut.get('arabe', '')} - {aut.get('latin', '')}".strip(" -")
+                if aut_str:
+                    print(f"  - Autorité           : {aut_str}")
+            if dg12.get("date_emission"):
+                print(f"  - Date Délivrance    : {dg12.get('date_emission')}")
         print(f"  - Photo Biométrique  : {photo_desc}")
         print(f"  - Signature          : {sig_desc}")
         print("=" * 70 + "\n")

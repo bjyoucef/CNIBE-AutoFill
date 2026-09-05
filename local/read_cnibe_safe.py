@@ -364,12 +364,12 @@ class SecureMessagingSession:
         mac = compute_retail_mac(self.ks_mac, mac_input)
         do8e = b"\x8E\x08" + mac
 
-        # 5. Construction finale de l'APDU protégée (ISO 7816-4 : Le absent si la commande d'origine n'a pas de Le)
+        # 5. Construction finale de l'APDU protégée
+        # RÈGLE ICAO DOC 9303 PART 11 (Section 9.8.4) :
+        # Le champ Le extérieur est TOUJOURS présent et fixé à 0x00 dans les commandes protégées
+        # afin de permettre à la puce de renvoyer le conteneur SM (DO99 statut + DO8E MAC).
         body = do87 + do97 + do8e
-        if le is not None:
-            protected_apdu = [cla_sm, ins, p1, p2, len(body)] + list(body) + [0x00]
-        else:
-            protected_apdu = [cla_sm, ins, p1, p2, len(body)] + list(body)
+        protected_apdu = [cla_sm, ins, p1, p2, len(body)] + list(body) + [0x00]
 
         if self.debug:
             print(f"[DEBUG SM TX] INS={ins:02X} P1={p1:02X} P2={p2:02X} Le={le} -> {bytes(protected_apdu).hex().upper()}")
@@ -583,28 +583,32 @@ def read_elementary_file(sm: SecureMessagingSession, fid_bytes: bytes) -> bytes:
         bytes.fromhex("011D"): 0x1D
     }
     sfid = sfid_map.get(fid_bytes)
-    use_sfid = False
+    header = None
 
-    # 1. Sélection du fichier par FID (INS 0xA4, P1=0x02, P2=0x0C sans Le)
-    _, sw1, sw2 = sm.transmit(cla=0x00, ins=0xA4, p1=0x02, p2=0x0C, data=fid_bytes, le=None)
-    if sw1 != 0x90:
-        # Essai avec P2=0x00 si P2=0x0C a échoué
-        _, sw1_alt, sw2_alt = sm.transmit(cla=0x00, ins=0xA4, p1=0x02, p2=0x00, data=fid_bytes, le=None)
-        if sw1_alt != 0x90:
-            if sfid is not None:
-                use_sfid = True
-            else:
-                raise SecurityException(f"Échec sélection FID {fid_bytes.hex().upper()} (SW={sw1:02X}{sw2:02X})")
+    # 1. Sélection & Lecture du header ASN.1
+    # RÈGLE ICAO DOC 9303 : Si le fichier possède un SFID standardisé, la sélection directe
+    # par SFID dans READ BINARY (P1 = 0x80 | SFID) est la méthode universelle recommandée,
+    # plus rapide et parfaitement tolérée par tous les passeports et cartes eMRTD.
+    if sfid is not None:
+        p1_init = 0x80 | sfid
+        try:
+            h_candidate, sw1, sw2 = sm.transmit(cla=0x00, ins=0xB0, p1=p1_init, p2=0x00, data=None, le=8)
+            if sw1 == 0x90 and len(h_candidate) >= 2:
+                header = h_candidate
+        except Exception:
+            header = None
 
-    time.sleep(0.010)
-
-    # 2. Lecture du header ASN.1 (8 octets pour couvrir Tag et Longueur complets)
-    p1_init = (0x80 | sfid) if use_sfid else 0x00
-    header, sw1, sw2 = sm.transmit(cla=0x00, ins=0xB0, p1=p1_init, p2=0x00, data=None, le=8)
-    if sw1 != 0x90 or len(header) < 2:
-        raise SecurityException(
-            f"Impossible de lire le header ASN.1 du fichier {fid_bytes.hex().upper()} (SW={sw1:02X}{sw2:02X}, len={len(header)})"
-        )
+    if header is None:
+        # Repli : Sélection explicite par FID puis lecture à l'offset 0
+        _, sw1, sw2 = sm.transmit(cla=0x00, ins=0xA4, p1=0x02, p2=0x0C, data=fid_bytes, le=None)
+        if sw1 != 0x90:
+            _, sw1, sw2 = sm.transmit(cla=0x00, ins=0xA4, p1=0x02, p2=0x00, data=fid_bytes, le=None)
+        time.sleep(0.010)
+        header, sw1, sw2 = sm.transmit(cla=0x00, ins=0xB0, p1=0x00, p2=0x00, data=None, le=8)
+        if sw1 != 0x90 or len(header) < 2:
+            raise SecurityException(
+                f"Impossible de lire le header ASN.1 du fichier {fid_bytes.hex().upper()} (SW={sw1:02X}{sw2:02X}, len={len(header) if header else 0})"
+            )
 
     # Décodage de la taille ASN.1
     idx = 1
@@ -958,6 +962,19 @@ def extract_ef_dg2_photo(data: bytes, output_path: Optional[str] = None, auto_in
                 image_format = "JPEG2000 (Codestream)"
 
     if image_bytes:
+        display_bytes = image_bytes
+        # Conversion transparente JPEG2000 -> JPEG pour compatibilité navigateurs Web (Chrome/Edge/Firefox)
+        if image_format and "JPEG2000" in image_format:
+            try:
+                import io
+                from PIL import Image
+                img_jp2 = Image.open(io.BytesIO(image_bytes))
+                buf_jpg = io.BytesIO()
+                img_jp2.convert("RGB").save(buf_jpg, format="JPEG", quality=95)
+                display_bytes = buf_jpg.getvalue()
+            except Exception as err_jp2:
+                print(f"[!] Info conversion image : {err_jp2}", file=sys.stderr)
+
         result = {
             "format": image_format,
             "size_bytes": len(image_bytes),
@@ -966,13 +983,15 @@ def extract_ef_dg2_photo(data: bytes, output_path: Optional[str] = None, auto_in
         }
         if output_path:
             final_path = get_unique_filename(output_path) if auto_increment else output_path
+            # Si le fichier demandé est .jpg ou .jpeg et qu'on a converti, sauvegarder le JPEG standard
+            save_bytes = display_bytes if (final_path.lower().endswith(('.jpg', '.jpeg')) and display_bytes != image_bytes) else image_bytes
             with open(final_path, "wb") as f:
-                f.write(image_bytes)
+                f.write(save_bytes)
             result["saved_path"] = os.path.abspath(final_path)
             result["filename"] = os.path.basename(final_path)
 
         if include_base64:
-            result["base64"] = base64.b64encode(image_bytes).decode("ascii")
+            result["base64"] = base64.b64encode(display_bytes).decode("ascii")
         return result
     return None
 
@@ -1070,19 +1089,29 @@ def parse_ef_dg11(data: bytes) -> Dict[str, Any]:
     if 0x5F0E in tlvs:
         text = decode_dg11_text(tlvs[0x5F0E])
         parts = text.split("<<")
-        res["nom"] = {
-            "latin": parts[0].replace('<', ' ').strip(),
-            "arabe": parts[1].replace('<', ' ').strip() if len(parts) > 1 else ""
-        }
+        part0 = parts[0].replace('<', ' ').strip()
+        part1 = parts[1].replace('<', ' ').strip() if len(parts) > 1 else ""
+        # Détection : si part1 contient des caractères latins et pas d'arabe (norme ICAO TD3 : 5F0E = NOM<<PRENOMS)
+        is_part1_arabic = bool(re.search(r'[\u0600-\u06FF]', part1))
+        if len(parts) > 1 and not is_part1_arabic and part1:
+            res["nom"] = {"latin": part0, "arabe": ""}
+            res["prenoms"] = {"latin": part1, "arabe": ""}
+        else:
+            res["nom"] = {"latin": part0, "arabe": part1}
 
     # 2. Prénom (0x5F0F)
     if 0x5F0F in tlvs:
         text = decode_dg11_text(tlvs[0x5F0F])
         parts = text.split("<<")
-        res["prenoms"] = {
-            "latin": parts[0].replace('<', ' ').strip(),
-            "arabe": parts[1].replace('<', ' ').strip() if len(parts) > 1 else ""
-        }
+        prenom_lat = parts[0].replace('<', ' ').strip()
+        prenom_ar = parts[1].replace('<', ' ').strip() if len(parts) > 1 else ""
+        if "prenoms" not in res:
+            res["prenoms"] = {"latin": prenom_lat, "arabe": prenom_ar}
+        else:
+            if prenom_lat:
+                res["prenoms"]["latin"] = prenom_lat
+            if prenom_ar:
+                res["prenoms"]["arabe"] = prenom_ar
 
     # 3. NIN (0x5F10)
     if 0x5F10 in tlvs:
@@ -1155,8 +1184,16 @@ def parse_ef_dg11(data: bytes) -> Dict[str, Any]:
     if 0x5F2B in tlvs:
         res["date_naissance_complete"] = decode_dg11_text(tlvs[0x5F2B]).replace('<', '').strip()
 
+    # 11. Groupe Sanguin direct (0x5F18, ex: "B+", "O+")
+    if 0x5F18 in tlvs:
+        bg_val = decode_dg11_text(tlvs[0x5F18]).replace('<', '').strip()
+        if "sexe_groupe_sanguin" not in res:
+            res["sexe_groupe_sanguin"] = {}
+        if not res["sexe_groupe_sanguin"].get("groupe_sanguin"):
+            res["sexe_groupe_sanguin"]["groupe_sanguin"] = bg_val
+
     # Capture de tout autre tag dynamique (excluant métadonnées ASN.1 0x5C, 0x02)
-    connus = {0x5F0E, 0x5F0F, 0x5F10, 0x5F11, 0x5F42, 0x5F12, 0x5F16, 0x5F26, 0x5F14, 0x5F2B, 0x5C, 0x02}
+    connus = {0x5F0E, 0x5F0F, 0x5F10, 0x5F11, 0x5F42, 0x5F12, 0x5F16, 0x5F26, 0x5F14, 0x5F2B, 0x5F18, 0x5C, 0x02}
     inconnus = {}
     for t, v in tlvs.items():
         if t not in connus and t not in (0x6B, 0xA0):
@@ -1643,6 +1680,8 @@ def read_cnibe_card(
             result_data["document_type"] = dg1_info.get("document_type", "P" if is_passport else "I")
             result_data["document_format"] = dg1_info.get("format", "TD3 (Passeport)" if is_passport else "TD1 (Carte d'Identité)")
             print(f"[+] Données DG1 extraites avec succès : {result_data['document_format']} ({dg1_info.get('issuing_country', '')}).")
+        else:
+            raise SecurityException("Impossible d'extraire EF.DG1 (MRZ) depuis la puce du document.")
 
         time.sleep(0.04)
 
