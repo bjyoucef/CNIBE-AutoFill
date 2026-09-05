@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>CNIBE Reader - Portail Web Client/Serveur</title>
+    <title>Lecture de Carte Nationale d'Identité Biométrique</title>
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -265,6 +265,45 @@
             color: #fff;
         }
 
+        /* Sélecteur de type de document */
+        .doc-type-selector {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 18px;
+            background: #090e1a;
+            padding: 4px;
+            border-radius: var(--radius-md);
+            border: 1px solid var(--border-color);
+        }
+
+        .doc-tab {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            padding: 10px 12px;
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.25s ease;
+        }
+
+        .doc-tab.active {
+            background: linear-gradient(135deg, #1d4ed8, #0284c7);
+            color: #fff;
+            box-shadow: 0 4px 12px rgba(2, 132, 199, 0.35);
+        }
+
+        .doc-tab:hover:not(.active) {
+            color: var(--text-primary);
+            background: rgba(255, 255, 255, 0.04);
+        }
+
         /* Progress Bar & Loader */
         .progress-box {
             display: none;
@@ -389,43 +428,6 @@
             border: 1px solid rgba(59, 130, 246, 0.35);
         }
 
-        /* Toggle switch */
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 42px;
-            height: 22px;
-        }
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
-        }
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-color: #334155;
-            transition: .3s;
-            border-radius: 22px;
-        }
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 16px;
-            width: 16px;
-            left: 3px;
-            bottom: 3px;
-            background-color: white;
-            transition: .3s;
-            border-radius: 50%;
-        }
-        input:checked + .slider {
-            background-color: #10b981;
-        }
-        input:checked + .slider:before {
-            transform: translateX(20px);
-        }
 
         .identity-fields {
             flex: 1;
@@ -462,34 +464,6 @@
             font-family: monospace;
         }
 
-        /* Historique des sauvegardes */
-        .history-section {
-            margin-top: 32px;
-        }
-
-        .history-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        .history-table th {
-            text-align: left;
-            padding: 12px;
-            background: #0e1626;
-            color: var(--text-secondary);
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .history-table td {
-            padding: 12px;
-            border-bottom: 1px solid var(--border-color);
-            color: var(--text-primary);
-        }
-
-        .history-table tr:hover td {
-            background: var(--bg-card-hover);
-        }
 
         /* Alertes */
         .alert {
@@ -519,15 +493,17 @@
     <!-- Header -->
     <header>
         <div class="brand">
-            <div class="brand-logo">🪪</div>
+            <div class="brand-logo" id="brand-logo-icon">🪪</div>
             <div class="brand-text">
-                <h1>CNIBE Biometric Reader (LAN)</h1>
-                <h2>الجمهورية الجزائرية الديمقراطية الشعبية - بطاقة التعريف الوطنية البيومترية</h2>
+                <h1 id="brand-title">Lecture de Titres d'Identité Sécurisés</h1>
+                <h2 id="brand-subtitle">الجمهورية الجزائرية الديمقراطية الشعبية - بطاقة التعريف وجواز السفر البيومتري</h2>
             </div>
         </div>
-        <div style="font-size: 12px; color: var(--text-muted); text-align: right;">
-            Serveur Web : <span style="color: var(--accent-cyan);">Flask Minimal Test</span><br>
-            Client Agent : <span style="color: var(--accent-emerald);">http://127.0.0.1:5001</span>
+        <div style="font-size: 13px; color: var(--text-secondary); text-align: right;">
+            <span style="display: inline-flex; align-items: center; gap: 8px; background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); padding: 6px 14px; border-radius: 20px; font-weight: 500; color: #34d399;">
+                <span style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+                Système opérationnel
+            </span>
         </div>
     </header>
 
@@ -535,15 +511,15 @@
     <div class="status-bar">
         <div class="status-pill">
             <div id="dot-server" class="status-dot online"></div>
-            <span>Serveur Flask LAN : <strong>En ligne</strong></span>
+            <span>Système central : <strong>Opérationnel</strong></span>
         </div>
         <div class="status-pill">
             <div id="dot-agent" class="status-dot offline"></div>
-            <span id="text-agent">Agent Local : <strong>Vérification...</strong></span>
+            <span id="text-agent">Service lecteur : <strong>Vérification...</strong></span>
         </div>
         <div class="status-pill">
             <div id="dot-reader" class="status-dot offline"></div>
-            <span id="text-reader">Lecteur NFC : <strong>Détection...</strong></span>
+            <span id="text-reader">Lecteur de carte : <strong>Détection...</strong></span>
         </div>
         <div class="status-pill">
             <div id="dot-card" class="status-dot offline"></div>
@@ -556,69 +532,63 @@
 
     <!-- Main Grid -->
     <div class="main-grid">
-        <!-- Colonne Gauche : Paramètres de Scan -->
+        <!-- Colonne Gauche : Saisie des informations du document -->
         <div class="card">
             <div class="card-header">
-                <div class="card-title">⚙️ Paramètres de Lecture BAC</div>
+                <div class="card-title" id="card-panel-title">⚙️ Informations du Document</div>
+            </div>
+
+            <!-- Onglets de sélection du type de document -->
+            <div class="doc-type-selector">
+                <button type="button" class="doc-tab active" id="tab-idcard" onclick="selectDocType('ID_CARD')">
+                    <span>🪪</span> Carte d'Identité
+                </button>
+                <button type="button" class="doc-tab" id="tab-passport" onclick="selectDocType('PASSPORT')">
+                    <span>📘</span> Passeport Biométrique
+                </button>
             </div>
 
             <form id="form-scan" onsubmit="event.preventDefault(); triggerScan();">
                 <div class="form-group">
-                    <label for="input-doc">N° Document (9 chiffres)</label>
-                    <input type="text" id="input-doc" class="form-control" value="106172516" placeholder="Ex: 106172516" required maxlength="10">
+                    <label for="input-doc" id="label-input-doc">N° de Carte (9 chiffres)</label>
+                    <input type="text" id="input-doc" class="form-control" value="" placeholder="Ex: 101616166" required maxlength="12">
                 </div>
 
                 <div class="form-group">
                     <label for="input-dob">Date de Naissance (JJ/MM/AAAA)</label>
-                    <input type="text" id="input-dob" class="form-control" value="19/11/1957" placeholder="JJ/MM/AAAA" required>
+                    <input type="text" id="input-dob" class="form-control" value="" placeholder="JJ/MM/AAAA" required>
                 </div>
 
                 <div class="form-group">
                     <label for="input-doe">Date d'Expiration (JJ/MM/AAAA)</label>
-                    <input type="text" id="input-doe" class="form-control" value="04/10/2027" placeholder="JJ/MM/AAAA" required>
-                </div>
-
-                <!-- Option Mode Connecté Ministère -->
-                <div style="display: flex; align-items: center; justify-content: space-between; margin: 14px 0 18px; padding: 10px 14px; background: rgba(37, 99, 235, 0.08); border: 1px solid rgba(59, 130, 246, 0.25); border-radius: var(--radius-md);">
-                    <div>
-                        <strong style="font-size: 13px; color: #fff;">🌐 Mode Ministère Connecté</strong>
-                        <div style="font-size: 11px; color: var(--text-muted);">Récupère l'adresse officielle de rue (macnibe)</div>
-                    </div>
-                    <label class="switch">
-                        <input type="checkbox" id="toggle-ministere" checked>
-                        <span class="slider"></span>
-                    </label>
+                    <input type="text" id="input-doe" class="form-control" value="" placeholder="JJ/MM/AAAA" required>
                 </div>
 
                 <button type="submit" id="btn-scan" class="btn btn-primary">
                     <span id="btn-scan-icon">📲</span>
-                    <span id="btn-scan-text">Lire la Carte (NFC)</span>
-                </button>
-
-                <button type="button" class="btn btn-secondary" onclick="prefillTestCard()">
-                    🔄 Recharger données de test
+                    <span id="btn-scan-text">Lire la Carte</span>
                 </button>
             </form>
 
             <div id="progress-box" class="progress-box">
-                <div id="progress-text" class="progress-status">Établissement du canal sécurisé BAC...</div>
+                <div id="progress-text" class="progress-status">Connexion au document...</div>
                 <div class="progress-bar-bg">
                     <div id="progress-bar" class="progress-bar-fill"></div>
                 </div>
             </div>
 
-            <div style="margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.6;">
-                <strong>💡 Fonctionnement :</strong><br>
-                1. Ce navigateur contacte l'agent local sur <code>127.0.0.1:5001</code>.<br>
-                2. L'agent lit la carte NFC via le lecteur USB de ce PC client.<br>
-                3. Les données extraites sont enrichies via le Ministère et synchronisées sur Flask.
+            <div id="guide-box" style="margin-top: 20px; font-size: 12px; color: var(--text-muted); line-height: 1.6; background: rgba(255,255,255,0.02); padding: 14px; border-radius: 10px; border: 1px solid var(--border-color);">
+                <strong style="color: var(--text-secondary); display: block; margin-bottom: 6px;">💡 Guide d'utilisation :</strong>
+                <span id="guide-step1">1. Déposez la carte d'identité bien à plat sur le lecteur.</span><br>
+                <span id="guide-step2">2. Renseignez les 3 informations inscrites sur le document.</span><br>
+                <span id="guide-step3">3. Cliquez sur <strong>Lire la Carte</strong> pour charger automatiquement les données et la photo.</span>
             </div>
         </div>
 
-        <!-- Colonne Droite : Données Biométriques & Identité Extraites -->
+        <!-- Colonne Droite : Données & Fiche d'Identité -->
         <div class="card">
             <div class="card-header">
-                <div class="card-title">👤 Fiche d'Identité Biométrique (CNIBE)</div>
+                <div class="card-title">👤 Fiche d'Identité du Citoyen</div>
                 <span id="badge-status" style="font-size: 12px; color: var(--text-muted);">En attente de lecture...</span>
             </div>
 
@@ -627,10 +597,10 @@
                 <div class="photos-column">
                     <div>
                         <div class="photo-card">
-                            <img id="img-photo" src="" style="display: none;" alt="Photo Biométrique">
+                            <img id="img-photo" src="" style="display: none;" alt="Photo d'identité">
                             <div id="photo-placeholder" class="photo-placeholder">👤</div>
                         </div>
-                        <div class="badge-tag" id="badge-photo-tag">Photo Biométrique (DG2)</div>
+                        <div class="badge-tag" id="badge-photo-tag">Photo d'identité</div>
                     </div>
 
                     <div>
@@ -638,7 +608,7 @@
                             <img id="img-signature" src="" style="display: none;" alt="Signature">
                             <div id="sig-placeholder" style="font-size: 20px; color: var(--text-muted);">✍️</div>
                         </div>
-                        <div class="badge-tag" id="badge-sig-tag">Signature (DG7)</div>
+                        <div class="badge-tag" id="badge-sig-tag">Signature</div>
                     </div>
                 </div>
 
@@ -699,20 +669,15 @@
                             <label style="margin-bottom: 0;">Adresse Résidentielle / العنوان الكامل</label>
                             <span id="badge-adresse-source" class="badge-tag" style="display: none;"></span>
                         </div>
-                        <div style="display: flex; gap: 8px;">
-                            <input type="text" id="val-adresse" class="form-control arabic-text" readonly placeholder="En attente de lecture..." style="font-size: 15px; padding: 11px; color: #38bdf8; font-weight: 700; flex: 1;">
-                            <button type="button" id="btn-sync-ministere" class="btn btn-secondary" onclick="manualSyncMinistere()" style="width: auto; margin-top: 0; padding: 8px 14px; font-size: 12px; white-space: nowrap;" title="Interroger macnibe.interieur.gov.dz">
-                                🌐 Vérifier Ministère
-                            </button>
-                        </div>
+                        <input type="text" id="val-adresse" class="form-control arabic-text" readonly placeholder="En attente de lecture..." style="font-size: 15px; padding: 11px; color: #38bdf8; font-weight: 700;">
                     </div>
                 </div>
             </div>
 
             <!-- Détails du Document -->
             <div style="border-top: 1px solid var(--border-color); padding-top: 16px; margin-top: 10px;">
-                <div style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px;">
-                    📄 Détails du Document eMRTD (DG12 & DG1)
+                <div id="title-doc-details" style="font-size: 13px; font-weight: 600; color: var(--text-secondary); margin-bottom: 12px;">
+                    📄 Informations du Document
                 </div>
                 <div class="fields-grid">
                     <div class="form-group">
@@ -732,46 +697,77 @@
         </div>
     </div>
 
-    <!-- Historique des Cartes Enregistrées sur le Serveur Flask -->
-    <div class="card history-section">
-        <div class="card-header">
-            <div class="card-title">🗄️ Historique des Cartes Reçues par le Serveur Flask (Test)</div>
-            <button class="btn btn-secondary" style="width: auto; padding: 6px 14px; margin: 0;" onclick="loadHistory()">
-                🔄 Actualiser l'historique
-            </button>
-        </div>
-        <div style="overflow-x: auto;">
-            <table class="history-table">
-                <thead>
-                    <tr>
-                        <th>Date Scan</th>
-                        <th>N° Document</th>
-                        <th>NIN</th>
-                        <th>Nom & Prénom (Latin)</th>
-                        <th>الاسم واللقب (عربي)</th>
-                        <th>Adresse (العنوان)</th>
-                        <th>Situation</th>
-                        <th>Photo</th>
-                    </tr>
-                </thead>
-                <tbody id="history-tbody">
-                    <tr>
-                        <td colspan="8" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td>
-                    </tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
 </div>
 
 <script>
     const AGENT_URL = "http://127.0.0.1:5001";
     let agentOnline = false;
     let isScanningActive = false;
+    let selectedDocType = "ID_CARD";
 
-    // Vérification en boucle de l'agent local (toutes les 3 secondes)
+    function selectDocType(type) {
+        selectedDocType = type;
+        const tabIdCard = document.getElementById("tab-idcard");
+        const tabPassport = document.getElementById("tab-passport");
+        const labelDoc = document.getElementById("label-input-doc");
+        const inputDoc = document.getElementById("input-doc");
+        const btnText = document.getElementById("btn-scan-text");
+        const btnIcon = document.getElementById("btn-scan-icon");
+        const guide1 = document.getElementById("guide-step1");
+        const guide3 = document.getElementById("guide-step3");
+        const cardTitle = document.getElementById("card-panel-title");
+        const brandLogo = document.getElementById("brand-logo-icon");
+
+        if (type === "PASSPORT") {
+            tabPassport.classList.add("active");
+            tabIdCard.classList.remove("active");
+            labelDoc.textContent = "N° de Passeport (9 caractères)";
+            inputDoc.placeholder = "Ex: 123456789 ou A1234567";
+            btnText.textContent = "Lire le Passeport";
+            btnIcon.textContent = "📘";
+            brandLogo.textContent = "📘";
+            cardTitle.textContent = "⚙️ Informations du Passeport";
+            guide1.innerHTML = "1. Ouvrez le passeport à la page photo et posez-le bien à plat sur le lecteur NFC.";
+            guide3.innerHTML = "3. Cliquez sur <strong>Lire le Passeport</strong> pour charger l'identité et la photo biométrique.";
+        } else {
+            tabIdCard.classList.add("active");
+            tabPassport.classList.remove("active");
+            labelDoc.textContent = "N° de Carte (9 chiffres)";
+            inputDoc.placeholder = "Ex: 101616166";
+            btnText.textContent = "Lire la Carte";
+            btnIcon.textContent = "🪪";
+            brandLogo.textContent = "🪪";
+            cardTitle.textContent = "⚙️ Informations de la Carte";
+            guide1.innerHTML = "1. Déposez la carte d'identité bien à plat sur le lecteur.";
+            guide3.innerHTML = "3. Cliquez sur <strong>Lire la Carte</strong> pour charger automatiquement les données et la photo.";
+        }
+    }
+
+    // Messages clairs et compréhensibles sans jargon technique
+    function getFriendlyErrorMessage(err) {
+        const msg = (typeof err === "string" ? err : (err && err.message) || "").toLowerCase();
+        const docName = selectedDocType === "PASSPORT" ? "le passeport" : "la carte";
+        if (msg.includes("bac") || msg.includes("security") || msg.includes("authentification") || msg.includes("sécurité")) {
+            return `Informations non reconnues par ${docName}. Veuillez vérifier le N° de document, la date de naissance et la date d'expiration.`;
+        }
+        if (msg.includes("non détectée") || msg.includes("not found") || msg.includes("no card") || msg.includes("aucun lecteur") || msg.includes("pas de carte")) {
+            return `Aucun document détecté sur le lecteur. Veuillez poser ${docName} bien à plat contre la cible NFC et réessayer.`;
+        }
+        if (msg.includes("interrompue") || msg.includes("communication") || msg.includes("connection")) {
+            return `Communication interrompue. Ne retirez pas ${docName} pendant la lecture et réessayez.`;
+        }
+        if (msg.includes("en cours")) {
+            return "Une lecture est déjà en cours. Veuillez patienter un instant.";
+        }
+        if (msg.includes("agent") || msg.includes("failed to fetch") || msg.includes("network")) {
+            return "Impossible de joindre le lecteur. Assurez-vous que l'application de lecture locale est bien démarrée.";
+        }
+        return `Impossible de lire ${docName}. Veuillez vérifier les informations saisies et réessayer.`;
+    }
+
+    // Vérification de l'état du lecteur et de la carte
     async function checkAgentStatus() {
-        if (isScanningActive) return; // Ne JAMAIS interroger l'agent pendant qu'un scan NFC est en cours
+        if (isScanningActive) return;
 
         const dotAgent = document.getElementById("dot-agent");
         const textAgent = document.getElementById("text-agent");
@@ -791,22 +787,22 @@
                 const data = await res.json();
                 agentOnline = true;
                 dotAgent.className = "status-dot online";
-                textAgent.innerHTML = "Agent Local : <strong>Connecté (5001)</strong>";
+                textAgent.innerHTML = "Service lecteur : <strong>Prêt</strong>";
 
                 if (data.readers_count > 0) {
                     dotReader.className = "status-dot online";
-                    textReader.innerHTML = `Lecteur : <strong>${data.selected_reader || data.readers[0]}</strong>`;
+                    textReader.innerHTML = "Lecteur de carte : <strong>Prêt</strong>";
                 } else {
                     dotReader.className = "status-dot warning";
-                    textReader.innerHTML = "Lecteur : <strong>Aucun lecteur détecté</strong>";
+                    textReader.innerHTML = "Lecteur de carte : <strong>Aucun appareil branché</strong>";
                 }
 
                 if (data.card_present) {
                     dotCard.className = "status-dot online";
-                    textCard.innerHTML = "Carte : <strong>Présente sur le lecteur</strong>";
+                    textCard.innerHTML = "Document : <strong>Prêt sur le lecteur</strong>";
                 } else {
                     dotCard.className = "status-dot offline";
-                    textCard.innerHTML = "Carte : <strong>Non détectée</strong>";
+                    textCard.innerHTML = "Document : <strong>Non détecté</strong>";
                 }
             } else {
                 throw new Error("Statut non OK");
@@ -814,11 +810,11 @@
         } catch (err) {
             agentOnline = false;
             dotAgent.className = "status-dot offline";
-            textAgent.innerHTML = "Agent Local : <strong>Non démarré (127.0.0.1:5001)</strong>";
+            textAgent.innerHTML = "Service lecteur : <strong>Non démarré</strong>";
             dotReader.className = "status-dot offline";
-            textReader.innerHTML = "Lecteur : <strong>Inconnu</strong>";
+            textReader.innerHTML = "Lecteur de carte : <strong>Non détecté</strong>";
             dotCard.className = "status-dot offline";
-            textCard.innerHTML = "Carte : <strong>Inconnue</strong>";
+            textCard.innerHTML = "Document : <strong>Non détecté</strong>";
         }
     }
 
@@ -832,57 +828,59 @@
         const progressBox = document.getElementById("progress-box");
         const progressBar = document.getElementById("progress-bar");
         const progressText = document.getElementById("progress-text");
+        const docWord = selectedDocType === "PASSPORT" ? "du passeport" : "de la carte";
 
         if (!agentOnline) {
-            showAlert("L'agent client local n'est pas actif ! Lancez 'lancer_agent_client.bat' sur votre PC.", "error");
+            showAlert("Le service de lecture n'est pas actif. Veuillez démarrer l'application lecteur (lancer_agent.bat) sur votre ordinateur.", "error");
             return;
         }
 
         isScanningActive = true;
         document.getElementById("dot-card").className = "status-dot online";
-        document.getElementById("text-card").innerHTML = "Carte : <strong>Lecture NFC en cours...</strong>";
+        document.getElementById("text-card").innerHTML = "Document : <strong>Lecture en cours...</strong>";
 
         showAlert("", "none");
         btnScan.disabled = true;
-        btnScanText.textContent = "Lecture NFC en cours...";
+        btnScanText.textContent = "Lecture en cours...";
         progressBox.style.display = "block";
         progressBar.style.width = "30%";
-        progressText.textContent = "Connexion à la carte & authentification BAC...";
+        progressText.textContent = `Connexion à la puce ${docWord}...`;
 
         try {
             progressBar.style.width = "60%";
-            progressText.textContent = "Lecture sécurisée des Data Groups (DG1, DG11, DG12, Photo DG2, Signature DG7)...";
+            progressText.textContent = "Lecture des informations et de la photo biométrique...";
 
             const res = await fetch(`${AGENT_URL}/scan`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ doc, dob, doe, wait: 15 })
+                body: JSON.stringify({ doc, dob, doe, doc_type: selectedDocType, wait: 15 })
             });
 
             const result = await res.json();
 
             if (res.ok && result.status === "SUCCESS") {
                 progressBar.style.width = "90%";
-                progressText.textContent = "Transmission au serveur Flask...";
+                progressText.textContent = "Enregistrement des données...";
                 
                 displayCardData(result.data);
 
-                // Envoi des données au serveur Flask pour enregistrement centralisé
+                // Enregistrement des données
                 await saveToServer(result.data);
 
                 progressBar.style.width = "100%";
-                progressText.textContent = "Lecture et enregistrement terminés avec succès !";
-                showAlert("✅ Carte CNIBE lue et sauvegardée sur le serveur Flask avec succès !", "success");
+                progressText.textContent = "Lecture terminée avec succès !";
+                const successMsg = result.data.is_passport ? "✅ Passeport biométrique lu et enregistré avec succès !" : "✅ Carte d'identité lue et enregistrée avec succès !";
+                showAlert(successMsg, "success");
             } else {
                 throw new Error(result.message || "Erreur lors de la lecture.");
             }
 
         } catch (err) {
-            showAlert(`❌ Échec de la lecture : ${err.message}`, "error");
+            showAlert(`❌ ${getFriendlyErrorMessage(err)}`, "error");
         } finally {
             isScanningActive = false;
             btnScan.disabled = false;
-            btnScanText.textContent = "Lire la Carte (NFC)";
+            btnScanText.textContent = selectedDocType === "PASSPORT" ? "Lire le Passeport" : "Lire la Carte";
             setTimeout(() => { progressBox.style.display = "none"; }, 3000);
             checkAgentStatus();
         }
@@ -900,8 +898,29 @@
         const sig = data.signature || {};
         const min = data.ministere_data || {};
 
-        // NIN
-        document.getElementById("val-nin").textContent = min.nin || dg11.nin || "---";
+        const isPassport = Boolean(
+            data.is_passport || 
+            (dg1.document_type && dg1.document_type.startsWith('P')) || 
+            (dg1.format && dg1.format.includes('TD3')) ||
+            (dg1.document_type_category === 'PASSPORT')
+        );
+
+        // Synchroniser l'onglet actif si le document scanné est différent
+        if (isPassport && selectedDocType !== "PASSPORT") {
+            selectDocType("PASSPORT");
+        } else if (!isPassport && selectedDocType !== "ID_CARD") {
+            selectDocType("ID_CARD");
+        }
+
+        // NIN / Numéro Personnel
+        const ninBoxLabel = document.querySelector(".nin-label");
+        if (isPassport) {
+            if (ninBoxLabel) ninBoxLabel.textContent = "Numéro Personnel / NIN (Optionnel) / الرقم التعريفي";
+            document.getElementById("val-nin").textContent = dg1.optional_data || min.nin || dg11.nin || `Passeport N° ${dg1.document_number || ''}`;
+        } else {
+            if (ninBoxLabel) ninBoxLabel.textContent = "Numéro d'Identification National (NIN) / الرقم التعريفي الوطني";
+            document.getElementById("val-nin").textContent = min.nin || dg11.nin || "---";
+        }
 
         // Noms & Prénoms
         document.getElementById("val-nom-lat").value = min.nom_latin || (dg11.nom && dg11.nom.latin) || dg1.nom_latin || "";
@@ -913,42 +932,58 @@
         document.getElementById("val-dob").value = min.date_naissance || dg1.date_of_birth || dg11.date_naissance_complete || "";
         const lieuLat = min.lieu_naissance_latin || (dg11.lieu_naissance && dg11.lieu_naissance.latin) || "";
         const lieuAr = min.lieu_naissance_arabe || (dg11.lieu_naissance && dg11.lieu_naissance.arabe) || "";
-        document.getElementById("val-lieu").value = lieuAr ? `${lieuLat} (${lieuAr})` : lieuLat;
+        document.getElementById("val-lieu").value = lieuAr ? `${lieuLat} (${lieuAr})` : (lieuLat || (isPassport ? "Conforme OACI" : ""));
 
         // Sexe & Groupe sanguin
         const sg = dg11.sexe_groupe_sanguin || {};
         const sexLat = min.sexe_latin || sg.sexe_latin || dg1.sex || "";
         const sexAr = min.sexe_arabe || sg.sexe_arabe || "";
-        document.getElementById("val-sexe").value = sexLat ? `${sexLat} / ${sexAr}` : "";
+        document.getElementById("val-sexe").value = sexLat ? `${sexLat} / ${sexAr}`.trim().replace(/\/$/, '') : "";
         document.getElementById("val-groupe").value = min.groupe_sanguin || sg.groupe_sanguin || "---";
 
         // Situation familiale & Conjoint
         const sit = min.situation_familiale || (dg11.situation_familiale && `${dg11.situation_familiale.latin || ''} / ${dg11.situation_familiale.arabe || ''}`.trim()) || "---";
-        document.getElementById("val-situation").value = sit;
+        document.getElementById("val-situation").value = isPassport ? "Non spécifiée sur passeport" : sit;
         const cj = min.nom_epoux_arabe || min.nom_epoux_latin || (dg11.conjoint && `${dg11.conjoint.latin || ''} ${dg11.conjoint.arabe || ''}`.trim()) || "—";
-        document.getElementById("val-epoux").value = cj;
+        document.getElementById("val-epoux").value = isPassport ? "—" : cj;
 
         // Document
+        const docDetailsTitle = document.getElementById("title-doc-details");
+        if (docDetailsTitle) {
+            docDetailsTitle.textContent = isPassport ? "📄 Informations du Passeport Biométrique" : "📄 Informations de la Carte d'Identité";
+        }
+
         const autLat = (dg12.autorite_emission && dg12.autorite_emission.latin) || "";
         const autAr = (dg12.autorite_emission && dg12.autorite_emission.arabe) || "";
-        document.getElementById("val-autorite").value = autAr ? `${autLat} - ${autAr}` : autLat;
+        if (isPassport) {
+            const countryStr = dg1.issuing_country ? `Autorité Nationale (${dg1.issuing_country})` : "Autorité Émettrice";
+            document.getElementById("val-autorite").value = autAr ? `${autLat} - ${autAr}` : (autLat || countryStr);
+        } else {
+            document.getElementById("val-autorite").value = autAr ? `${autLat} - ${autAr}` : autLat;
+        }
+
         document.getElementById("val-date-emission").value = dg12.date_emission || "---";
         document.getElementById("val-date-expir").value = dg1.date_of_expiry || "";
 
         // Adresse Résidentielle
         const badgeSource = document.getElementById("badge-adresse-source");
-        if (min.adresse) {
+        if (isPassport) {
+            document.getElementById("val-adresse").value = "Document de voyage international (Sans adresse de résidence)";
+            badgeSource.style.display = "inline-block";
+            badgeSource.className = "badge-tag badge-tag-locale";
+            badgeSource.innerHTML = `📘 Norme OACI Doc 9303 (${dg1.issuing_country || 'ICAO'} / TD3)`;
+        } else if (min.adresse) {
             document.getElementById("val-adresse").value = min.adresse;
             badgeSource.style.display = "inline-block";
             badgeSource.className = "badge-tag badge-tag-ministere";
-            badgeSource.innerHTML = "✅ Certifiée Ministère (macnibe.interieur.gov.dz)";
+            badgeSource.innerHTML = "✅ Adresse officielle (Ministère de l'Intérieur)";
         } else {
             const addrDg11 = (dg11.adresse_residence && (dg11.adresse_residence.arabe || dg11.adresse_residence.latin)) || "";
             const addrFallback = addrDg11 || (autAr ? `${autAr} - ${autLat}` : autLat);
-            document.getElementById("val-adresse").value = addrFallback || "Non spécifiée sur la puce";
+            document.getElementById("val-adresse").value = addrFallback || "Non renseignée sur la carte";
             badgeSource.style.display = "inline-block";
             badgeSource.className = "badge-tag badge-tag-locale";
-            badgeSource.innerHTML = "ℹ️ Puce Locale (Commune délivrance)";
+            badgeSource.innerHTML = "ℹ️ Adresse de la carte (Commune d'émission)";
         }
 
         // Photo
@@ -960,7 +995,7 @@
             document.getElementById("photo-placeholder").style.display = "none";
             const tagP = document.getElementById("badge-photo-tag");
             if (tagP) {
-                tagP.textContent = min.photo_base64 ? "Photo (Certifiée RNEC)" : `Photo (${photo.filename || 'DG2'})`;
+                tagP.textContent = min.photo_base64 ? "Photo officielle (Ministère)" : (isPassport ? "Photo Passeport" : "Photo d'identité");
             }
         }
 
@@ -971,77 +1006,19 @@
             imgS.style.display = "block";
             document.getElementById("sig-placeholder").style.display = "none";
             const tagS = document.getElementById("badge-sig-tag");
-            if (tagS && sig.filename) {
-                tagS.textContent = `Signature (${sig.filename})`;
+            if (tagS) {
+                tagS.textContent = "Signature";
             }
+        } else {
+            document.getElementById("img-signature").style.display = "none";
+            document.getElementById("sig-placeholder").style.display = "flex";
         }
 
-        document.getElementById("badge-status").innerHTML = `<span style="color: var(--accent-emerald);">● Lecture réussie (${data.timestamp})</span>`;
-
-        // Interrogation automatique du Ministère si activé
-        const isMinistereEnabled = document.getElementById("toggle-ministere").checked;
-        const docNum = dg1.document_number;
-        if (isMinistereEnabled && docNum && !min.adresse) {
-            await autoLookupMinistere(docNum, data);
-        }
+        const successTitle = isPassport ? `Passeport biométrique (${dg1.issuing_country || 'ICAO'}) lu avec succès` : "Carte lue avec succès";
+        document.getElementById("badge-status").innerHTML = `<span style="color: var(--accent-emerald);">● ${successTitle} (${data.timestamp})</span>`;
     }
 
-    // Interrogation asynchrone du Ministère pour récupérer l'adresse certifiée
-    async function autoLookupMinistere(docNum, baseCardData) {
-        const badgeSource = document.getElementById("badge-adresse-source");
-        badgeSource.style.display = "inline-block";
-        badgeSource.className = "badge-tag";
-        badgeSource.style.color = "var(--accent-cyan)";
-        badgeSource.innerHTML = "⏳ Interrogation macnibe.interieur.gov.dz...";
-
-        try {
-            const res = await fetch("/api/minister_lookup", {
-                method: "POST",
-                headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ document_number: docNum })
-            });
-
-            if (res.ok) {
-                const json = await res.json();
-                if (json.status === "SUCCESS" && json.ministere) {
-                    const min = json.ministere;
-                    if (min.adresse) document.getElementById("val-adresse").value = min.adresse;
-                    if (min.situation_familiale) document.getElementById("val-situation").value = min.situation_familiale;
-                    if (min.nom_epoux_arabe) document.getElementById("val-epoux").value = min.nom_epoux_arabe;
-                    
-                    badgeSource.className = "badge-tag badge-tag-ministere";
-                    badgeSource.innerHTML = "✅ Certifiée Ministère (macnibe.interieur.gov.dz)";
-
-                    showAlert("✅ Adresse officielle de rue certifiée récupérée auprès du Ministère !", "success");
-
-                    // Sauvegarder les données enrichies sur le serveur Flask
-                    const enriched = { ...baseCardData, ministere_data: min };
-                    await saveToServer(enriched);
-                }
-            } else {
-                badgeSource.className = "badge-tag badge-tag-locale";
-                badgeSource.innerHTML = "ℹ️ Puce Locale (Commune délivrance)";
-            }
-        } catch (e) {
-            console.warn("Lookup Ministère non disponible:", e);
-            badgeSource.className = "badge-tag badge-tag-locale";
-            badgeSource.innerHTML = "ℹ️ Puce Locale (Hors-ligne)";
-        }
-    }
-
-    // Synchronisation manuelle via le bouton
-    async function manualSyncMinistere() {
-        const docInput = document.getElementById("input-doc").value.trim();
-        const currentDoc = (currentCardData && currentCardData.dg1_mrz && currentCardData.dg1_mrz.document_number) || docInput;
-        if (!currentDoc) {
-            showAlert("Veuillez saisir ou scanner un numéro de carte.", "error");
-            return;
-        }
-        showAlert("Connexion au Ministère macnibe.interieur.gov.dz en cours...", "success");
-        await autoLookupMinistere(currentDoc, currentCardData || { dg1_mrz: { document_number: currentDoc } });
-    }
-
-    // Sauvegarde vers le serveur Flask
+    // Enregistrement des données de la carte ou passeport
     async function saveToServer(cardData) {
         try {
             const res = await fetch("/api/save_card", {
@@ -1050,45 +1027,25 @@
                 body: JSON.stringify(cardData)
             });
             if (res.ok) {
-                loadHistory();
-            }
-        } catch (err) {
-            console.error("Erreur enregistrement serveur Flask:", err);
-        }
-    }
-
-    // Chargement de l'historique depuis le serveur Flask
-    async function loadHistory() {
-        try {
-            const res = await fetch("/api/history");
-            if (res.ok) {
-                const history = await res.json();
-                const tbody = document.getElementById("history-tbody");
-                if (!history || history.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--text-muted);">Aucune carte enregistrée pour le moment.</td></tr>`;
-                    return;
+                const json = await res.json();
+                // Mise à jour automatique si l'adresse officielle a été trouvée
+                if (json.ministere && json.ministere.adresse) {
+                    document.getElementById("val-adresse").value = json.ministere.adresse;
+                    if (json.ministere.situation_familiale) document.getElementById("val-situation").value = json.ministere.situation_familiale;
+                    if (json.ministere.nom_epoux_arabe) document.getElementById("val-epoux").value = json.ministere.nom_epoux_arabe;
+                    const badgeSource = document.getElementById("badge-adresse-source");
+                    if (badgeSource) {
+                        badgeSource.style.display = "inline-block";
+                        badgeSource.className = "badge-tag badge-tag-ministere";
+                        badgeSource.innerHTML = "✅ Adresse officielle (Ministère de l'Intérieur)";
+                    }
                 }
-
-                tbody.innerHTML = history.map(item => `
-                    <tr>
-                        <td>${item.timestamp || '---'}</td>
-                        <td><strong>${item.document_number || '---'}</strong></td>
-                        <td style="font-family: monospace; color: var(--accent-cyan);">${item.nin || '---'}</td>
-                        <td>${item.nom_latin || ''} ${item.prenom_latin || ''}</td>
-                        <td class="arabic-text" style="font-size: 13px;">${item.nom_arabe || ''} ${item.prenom_arabe || ''}</td>
-                        <td class="arabic-text" style="font-size: 13px; color: ${item.source_adresse === 'MINISTERE' ? '#38bdf8' : 'var(--text-secondary)'}; font-weight: ${item.source_adresse === 'MINISTERE' ? 'bold' : 'normal'};">
-                            ${item.adresse || '—'}
-                            ${item.source_adresse === 'MINISTERE' ? '<br><span style="font-size: 10px; color: #34d399;">● Certifiée Ministère</span>' : ''}
-                        </td>
-                        <td style="font-size: 12px;">${item.situation_familiale || '—'}</td>
-                        <td>${item.photo_filename ? '📷 ' + item.photo_filename : (item.has_photo ? '📷 Présente' : '—')}</td>
-                    </tr>
-                `).join("");
             }
         } catch (err) {
-            console.error("Erreur historique:", err);
+            console.error("Erreur enregistrement:", err);
         }
     }
+
 
     function showAlert(msg, type) {
         const box = document.getElementById("alert-box");
@@ -1101,18 +1058,10 @@
         box.style.display = "block";
     }
 
-    function prefillTestCard() {
-        document.getElementById("input-doc").value = "106172516";
-        document.getElementById("input-dob").value = "19/11/1957";
-        document.getElementById("input-doe").value = "04/10/2027";
-        showAlert("Données de test rechargées pour Ali AMARI (106172516).", "success");
-    }
-
     // Initialisation
     window.addEventListener("DOMContentLoaded", () => {
         checkAgentStatus();
         setInterval(checkAgentStatus, 2500);
-        loadHistory();
     });
 </script>
 

@@ -20,6 +20,7 @@ signature*.png
 signature*.jp2
 signature*.*
 test_saved_cards.json
+serveur/test_saved_cards.json
 *.log
 
 # Fichiers temporaires / backups
@@ -33,5 +34,3 @@ ehthumbs.db
 Desktop.ini
 $RECYCLE.BIN/
 .DS_Store
-inspect_live_ministere.py
-inspect_endpoints.py

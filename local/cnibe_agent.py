@@ -183,6 +183,201 @@ def get_passive_pcsc_status() -> Dict[str, Any]:
         scan_lock.release()
 
 
+LOCAL_DIR = os.path.dirname(os.path.abspath(__file__))
+TOKENS_CACHE_FILE = os.path.join(LOCAL_DIR, "tokens_cache.json")
+KNOWN_ID_CARDS: Dict[str, str] = {}
+
+
+def get_known_id_cards() -> Dict[str, str]:
+    """Charge les jetons IDCard cryptographiques en cache mémoire ou fichier tokens_cache.json local."""
+    global KNOWN_ID_CARDS
+    if os.path.exists(TOKENS_CACHE_FILE):
+        try:
+            with open(TOKENS_CACHE_FILE, "r", encoding="utf-8") as f:
+                saved = json.load(f)
+                KNOWN_ID_CARDS.update(saved)
+        except Exception:
+            pass
+    return KNOWN_ID_CARDS
+
+
+def save_token_to_cache(num: str, token: str):
+    """Sauvegarde un jeton généré dans le cache persistant local."""
+    global KNOWN_ID_CARDS
+    KNOWN_ID_CARDS[num] = token
+    try:
+        data = {}
+        if os.path.exists(TOKENS_CACHE_FILE):
+            with open(TOKENS_CACHE_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        data[num] = token
+        with open(TOKENS_CACHE_FILE, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+    except Exception:
+        pass
+
+
+def format_to_dmy(d, is_exp=False):
+    """Convertit un format de date (YYMMDD, YYYY-MM-DD, etc.) en JJ/MM/AAAA pour le composant officiel."""
+    if not d:
+        return ""
+    d_str = str(d).strip().replace('-', '/').replace('.', '/')
+    if len(d_str) == 6 and d_str.isdigit():
+        yy = int(d_str[:2])
+        mm = d_str[2:4]
+        dd = d_str[4:6]
+        full_year = 2000 + yy if is_exp or yy < 30 else 1900 + yy
+        return f"{dd}/{mm}/{full_year}"
+    if '/' in d_str:
+        p = d_str.split('/')
+        if len(p) == 3:
+            if len(p[0]) == 4:  # AAAA/MM/JJ -> JJ/MM/AAAA
+                return f"{p[2].zfill(2)}/{p[1].zfill(2)}/{p[0]}"
+            return f"{p[0].zfill(2)}/{p[1].zfill(2)}/{p[2]}"
+    return d_str
+
+
+def generate_local_token(num_carte: str, date_naiss: str, date_expir: str) -> Optional[str]:
+    """
+    Génère le jeton cryptographique IDCard en appelant le composant officiel du Ministère
+    (npDzaEidCard 0.6.14) via get_card_token.ps1 directement sur le poste client (lecteur USB).
+    """
+    import subprocess
+    import tempfile
+
+    num_norm = str(num_carte).strip()
+    d_naiss = format_to_dmy(date_naiss)
+    d_exp = format_to_dmy(date_expir, is_exp=True)
+
+    script_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "get_card_token.ps1")
+    if not os.path.exists(script_path):
+        return None
+
+    ps_candidates = [
+        r"C:\Windows\SysWOW64\WindowsPowerShell\v1.0\powershell.exe",
+        r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe",
+        "powershell.exe"
+    ]
+    ps_exe = None
+    for p in ps_candidates:
+        if os.path.exists(p) or p == "powershell.exe":
+            ps_exe = p
+            break
+
+    if not ps_exe:
+        return None
+
+    tmp_fd, tmp_out = tempfile.mkstemp(suffix=".txt")
+    os.close(tmp_fd)
+
+    cmd = [
+        ps_exe, "-ExecutionPolicy", "Bypass", "-File", script_path,
+        "-numCarte", num_norm,
+        "-dateNaiss", d_naiss,
+        "-dateExpir", d_exp,
+        "-outputFile", tmp_out
+    ]
+
+    try:
+        print(f"[*] [AGENT TOKEN] Génération du jeton officiel pour la carte {num_norm} via le lecteur USB local...")
+        subprocess.run(cmd, capture_output=True, timeout=20)
+        if os.path.exists(tmp_out):
+            with open(tmp_out, "r", encoding="utf-8", errors="ignore") as f:
+                content = f.read().strip()
+            try:
+                os.remove(tmp_out)
+            except Exception:
+                pass
+            if content.startswith("RESP:"):
+                token = content[5:].strip()
+                if len(token) > 100:
+                    print(f"[+] [AGENT TOKEN] Jeton officiel généré avec succès ({len(token)} car.) !")
+                    return token
+                else:
+                    print(f"[-] [AGENT TOKEN] Réponse inattendue : {token}")
+            else:
+                print(f"[-] [AGENT TOKEN] Sortie non reconnue : '{content}'")
+    except Exception as e:
+        print(f"[-] [AGENT TOKEN] Erreur génération jeton : {e}")
+    return None
+
+
+def fetch_ministere_data(document_number: str, id_card: str = None) -> Optional[Dict[str, Any]]:
+    """
+    Interroge le service officiel du Ministère de l'Intérieur algérien :
+    https://macnibe.interieur.gov.dz/WFReadCardFr.aspx/GET_IDCardControl
+    Retourne les 18 champs officiels dont l'adresse certifiée (index 9) et la situation familiale.
+    Exécuté directement depuis le poste client avec le jeton cryptographique généré localement.
+    """
+    import urllib.request
+    import ssl
+
+    doc_norm = str(document_number).strip()
+    if not id_card:
+        known = get_known_id_cards()
+        id_card = known.get(doc_norm)
+
+    if not id_card:
+        return None
+
+    url = "https://macnibe.interieur.gov.dz/WFReadCardFr.aspx/GET_IDCardControl"
+    payload = json.dumps({"IDCard": id_card, "NUM_CARTE": doc_norm}).encode('utf-8')
+    headers = {
+        "Host": "macnibe.interieur.gov.dz",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Requested-With": "XMLHttpRequest",
+        "Origin": "https://macnibe.interieur.gov.dz",
+        "Referer": "https://macnibe.interieur.gov.dz/WFReadCardFr.aspx"
+    }
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+
+    req = urllib.request.Request(url, data=payload, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, context=ctx, timeout=8) as resp:
+            if resp.status != 200:
+                return None
+            res_text = resp.read().decode('utf-8')
+            parsed = json.loads(res_text)
+            d_str = parsed.get("d", "")
+            if not d_str or d_str in ("00", "-1", "6300", "91010", "V"):
+                return None
+            parts = d_str.split('|')
+            if len(parts) < 15:
+                return None
+
+            return {
+                "status": "SUCCESS",
+                "source": "MINISTERE_INTERIEUR",
+                "nom_arabe": parts[0].strip(),
+                "nom_latin": parts[1].strip(),
+                "prenom_arabe": parts[2].strip(),
+                "prenom_latin": parts[3].strip(),
+                "date_naissance": parts[4].strip(),
+                "sexe_arabe": parts[5].strip(),
+                "groupe_sanguin": parts[6].strip(),
+                "situation_familiale_arabe": parts[7].strip(),
+                "situation_familiale_latin": parts[8].strip(),
+                "adresse": parts[9].strip(),
+                "adresse_officielle": parts[9].strip(),
+                "sexe_latin": parts[10].strip() if len(parts) > 10 else "",
+                "lieu_naissance_arabe": parts[11].strip() if len(parts) > 11 else "",
+                "lieu_naissance_latin": parts[12].strip() if len(parts) > 12 else "",
+                "has_photo": bool(len(parts) > 13 and parts[13]),
+                "photo_base64": parts[13] if len(parts) > 13 else "",
+                "nin": parts[14].strip() if len(parts) > 14 else "",
+                "nom_epoux_arabe": parts[15].strip() if len(parts) > 15 else "",
+                "nom_epoux_latin": parts[16].strip() if len(parts) > 16 else "",
+                "situation_familiale": parts[17].strip() if len(parts) > 17 else f"{parts[7]} / {parts[8]}"
+            }
+    except Exception as e:
+        print(f"[-] [MINISTÈRE API ERREUR] {e}", file=sys.stderr)
+        return None
+
+
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     """Serveur HTTP multi-threadé pour gérer les requêtes concurrentes."""
     daemon_threads = True
@@ -229,6 +424,8 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
 
         if parsed_path == "/scan":
             self._handle_scan()
+        elif parsed_path == "/token":
+            self._handle_token()
         else:
             self._send_json(404, {"status": "ERROR", "message": "Route introuvable"})
 
@@ -236,6 +433,29 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
         """Retourne l'état sans perturber le lecteur."""
         status_data = get_passive_pcsc_status()
         self._send_json(200, status_data)
+
+    def _handle_token(self):
+        """Génère le jeton officiel du Ministère via le lecteur USB local sans lecture NFC complète."""
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length <= 0:
+            self._send_json(400, {"status": "ERROR", "message": "Corps JSON manquant"})
+            return
+        try:
+            body_raw = self.rfile.read(content_length).decode('utf-8')
+            payload = json.loads(body_raw)
+            doc = payload.get("doc", "").strip()
+            dob = payload.get("dob", "").strip()
+            doe = payload.get("doe", "").strip()
+            if not doc or not dob or not doe:
+                self._send_json(400, {"status": "ERROR", "message": "Champs 'doc', 'dob' et 'doe' requis"})
+                return
+            token = generate_local_token(doc, dob, doe)
+            if token:
+                self._send_json(200, {"status": "SUCCESS", "id_card_token": token})
+            else:
+                self._send_json(500, {"status": "ERROR", "message": "Échec de génération du jeton local"})
+        except Exception as e:
+            self._send_json(500, {"status": "ERROR", "message": str(e)})
 
     def _handle_home(self):
         """Page d'accueil simple."""
@@ -293,6 +513,7 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
             doc = payload.get("doc", "").strip()
             dob = payload.get("dob", "").strip()
             doe = payload.get("doe", "").strip()
+            req_doc_type = payload.get("doc_type", "").strip().upper()
             wait_sec = int(payload.get("wait", 15))
 
             if not doc or not dob or not doe:
@@ -302,14 +523,16 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
                 })
                 return
 
-            print(f"\n[AGENT] Demande de scan reçue : Doc={doc}, DoB={dob}, DoE={doe}...")
+            print(f"\n[AGENT] Demande de scan reçue : Doc={doc}, DoB={dob}, DoE={doe}, Type={req_doc_type or 'AUTO'}...")
 
-            # Exécution de la lecture sécurisée
+            # Exécution de la lecture sécurisée (Mode 100% Mémoire : aucun fichier .jpg sur disque)
             card_data = read_cnibe_card(
                 doc=doc,
                 dob=dob,
                 doe=doe,
                 wait_seconds=wait_sec,
+                photo_dest=None,
+                signature_dest=None,
                 include_base64=True
             )
 
@@ -318,6 +541,55 @@ class CNIBEAgentHandler(BaseHTTPRequestHandler):
             sig_fn = card_data.get("signature", {}).get("filename", "")
             if photo_fn or sig_fn:
                 print(f"[AGENT] Fichiers sauvegardés : Photo={photo_fn or 'N/A'}, Signature={sig_fn or 'N/A'}")
+            else:
+                print("[AGENT] Confidentialité active : Photo et Signature conservées en mémoire (Base64), aucun fichier physique écrit sur disque.")
+
+            # Détection du type de document (Passeport vs Carte CNIBE)
+            dg1_info = card_data.get("dg1_mrz", {})
+            mrz_doc_type = dg1_info.get("document_type", "")
+            is_passport = (
+                card_data.get("is_passport", False) or 
+                req_doc_type in ["PASSPORT", "P"] or 
+                mrz_doc_type.startswith("P") or 
+                dg1_info.get("document_type_category") == "PASSPORT"
+            )
+            card_data["is_passport"] = is_passport
+
+            if is_passport:
+                print(f"[*] [AGENT] Document détecté : PASSEPORT BIOMÉTRIQUE ({mrz_doc_type or 'P'}).")
+                print("    Les services locaux CNIBE (ActiveX EidCard & consultation Ministère) sont ignorés car réservés aux Cartes d'Identité.")
+            else:
+                # Consultation officielle du Ministère de l'Intérieur (spécifique CNIBE)
+                # 1. Vérifier si un jeton officiel est déjà disponible dans le cache local
+                known = get_known_id_cards()
+                doc_norm = dg1_info.get("document_number", doc).strip()
+                token = known.get(doc_norm) or known.get(doc)
+
+                # 2. Si absent du cache, tenter la génération via le lecteur USB local
+                if not token:
+                    time.sleep(0.3)
+                    print(f"[*] [AGENT TOKEN] Génération du jeton officiel pour {doc_norm}...")
+                    token = generate_local_token(doc_norm, dob, doe)
+                    if token:
+                        save_token_to_cache(doc_norm, token)
+
+                # 3. Interroger le Ministère avec le jeton
+                if token:
+                    card_data["id_card_token"] = token
+                    try:
+                        print(f"[*] [AGENT] Consultation du Ministère de l'Intérieur pour Doc={doc_norm}...")
+                        min_data = fetch_ministere_data(doc_norm, token)
+                        if min_data:
+                            card_data["ministere_data"] = min_data
+                            print(f"[+] [AGENT] Données officielles reçues ! Adresse : {min_data.get('adresse')}")
+                        else:
+                            print(f"[-] [AGENT] Données officielles non disponibles.")
+                    except Exception as em:
+                        print(f"[-] [AGENT] Exception consultation Ministère : {em}")
+                else:
+                    min_data = fetch_ministere_data(doc_norm)
+                    if min_data:
+                        card_data["ministere_data"] = min_data
 
             self._send_json(200, {
                 "status": "SUCCESS",

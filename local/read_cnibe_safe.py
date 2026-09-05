@@ -715,55 +715,180 @@ def parse_ef_com(data: bytes) -> List[str]:
 
 def parse_ef_dg1(data: bytes) -> Dict[str, Any]:
     """
-    Parse EF.DG1 (FID 0101) contenant la zone de lecture optique TD1 (3 lignes x 30 caractères).
-    Extrait : Numéro, Dates, Sexe, Nationalité, Nom et Prénoms latins.
+    Parse EF.DG1 (FID 0101) contenant la zone de lecture optique MRZ.
+    Prend en charge automatiquement tous les formats conformes ICAO Doc 9303 :
+      - TD1 (Cartes d'identité) : 3 lignes x 30 caractères (90 caractères)
+      - TD3 (Passeports biométriques) : 2 lignes x 44 caractères (88 caractères)
+      - TD2 (Visas / cartes format ID-2) : 2 lignes x 36 caractères (72 caractères)
+    Extrait : Numéro de document, Type, Pays, Nationalité, Dates, Sexe, Nom, Prénoms.
     """
-    # Recherche du tag 0x5F1F (MRZ)
+    # 1. Extraction robuste de la valeur MRZ (tag 0x5F1F ASN.1)
     idx = data.find(b"\x5F\x1F")
     if idx != -1:
-        # Longueur du tag MRZ
-        len_b = data[idx + 2]
-        mrz_bytes = data[idx + 3: idx + 3 + len_b]
+        idx += 2
+        if idx < len(data):
+            len_b = data[idx]
+            idx += 1
+            if len_b < 0x80:
+                mrz_len = len_b
+            elif len_b == 0x81 and idx < len(data):
+                mrz_len = data[idx]
+                idx += 1
+            elif len_b == 0x82 and idx + 1 < len(data):
+                mrz_len = (data[idx] << 8) | data[idx + 1]
+                idx += 2
+            else:
+                mrz_len = len(data) - idx
+            mrz_bytes = data[idx:idx + mrz_len]
+        else:
+            mrz_bytes = data
     else:
-        mrz_bytes = data[-90:]
+        mrz_bytes = data
 
     mrz_str = mrz_bytes.decode('ascii', errors='replace')
-    lines = [mrz_str[i:i + 30] for i in range(0, len(mrz_str), 30) if len(mrz_str[i:i + 30]) == 30]
 
-    if len(lines) < 3:
-        # Fallback nettoyage si sauts de lignes présents
-        cleaned = "".join(ch for ch in mrz_str if ch.isalnum() or ch == '<')
-        lines = [cleaned[i:i + 30] for i in range(0, len(cleaned), 30) if len(cleaned[i:i + 30]) == 30]
+    # Nettoyage et découpage en lignes
+    raw_lines = [line.strip().upper() for line in re.split(r'[\r\n]+', mrz_str) if line.strip()]
 
-    res: Dict[str, Any] = {"raw_mrz": lines}
-    if len(lines) >= 3:
-        l1, l2, l3 = lines[0], lines[1], lines[2]
+    # Formatage lisible des dates AAAA-MM-JJ
+    def format_yymmdd(yymmdd: str, is_dob: bool = False) -> str:
+        if len(yymmdd) == 6 and yymmdd.isdigit():
+            yy, mm, dd = int(yymmdd[:2]), int(yymmdd[2:4]), int(yymmdd[4:])
+            century = 1900 if (is_dob and yy > 30) else 2000
+            return f"{century + yy:04d}-{mm:02d}-{dd:02d}"
+        return yymmdd
 
-        doc_num = l1[5:14].replace('<', '').strip()
+    res: Dict[str, Any] = {}
+
+    # Détection selon les lignes ou flux nettoyé
+    cleaned = "".join(ch for ch in mrz_str if ch.isalnum() or ch == '<')
+
+    if len(raw_lines) == 2 and len(raw_lines[0]) == 44 and len(raw_lines[1]) == 44:
+        lines = raw_lines
+    elif len(raw_lines) == 3 and len(raw_lines[0]) == 30 and len(raw_lines[1]) == 30 and len(raw_lines[2]) == 30:
+        lines = raw_lines
+    elif len(raw_lines) == 2 and len(raw_lines[0]) == 36 and len(raw_lines[1]) == 36:
+        lines = raw_lines
+    elif cleaned.startswith('P') and len(cleaned) >= 88:
+        # TD3 : Passeport (2 x 44)
+        lines = [cleaned[0:44], cleaned[44:88]]
+    elif len(cleaned) >= 90 and (cleaned[0] in ('I', 'A', 'C') or not cleaned.startswith('P')):
+        # TD1 : Carte (3 x 30)
+        lines = [cleaned[0:30], cleaned[30:60], cleaned[60:90]]
+    elif len(cleaned) >= 72 and len(cleaned) < 88:
+        # TD2 : (2 x 36)
+        lines = [cleaned[0:36], cleaned[36:72]]
+    else:
+        # Dernier recours par découpage
+        if cleaned.startswith('P') and len(cleaned) >= 44:
+            lines = [cleaned[i:i + 44] for i in range(0, len(cleaned), 44) if len(cleaned[i:i + 44]) == 44]
+        else:
+            lines = [cleaned[i:i + 30] for i in range(0, len(cleaned), 30) if len(cleaned[i:i + 30]) == 30]
+
+    res["raw_mrz"] = lines
+
+    # Traitement selon le format détecté
+    if len(lines) == 2 and len(lines[0]) == 44 and len(lines[1]) == 44:
+        # ==========================================================
+        # FORMAT TD3 : PASSEPORT BIOMÉTRIQUE (2 lignes x 44 caractères)
+        # ==========================================================
+        l1, l2 = lines[0], lines[1]
         doc_type = l1[0:2].replace('<', '').strip()
         issuing_country = l1[2:5].replace('<', '').strip()
 
+        # Ligne 1 (pos 5-44) : Nom de famille << Prénoms
+        name_part = l1[5:44]
+        name_parts = name_part.split('<<')
+        nom_latin = name_parts[0].replace('<', ' ').strip()
+        prenom_latin = " ".join(p.replace('<', ' ').strip() for p in name_parts[1:]).strip()
+
+        # Ligne 2 : Numéro (0..9), CD (9), Nat (10..13), DoB (13..19), CD (19), Sex (20), DoE (21..27), CD (27), Opt (28..42)
+        doc_num = l2[0:9].replace('<', '').strip()
+        doc_num_cd = l2[9] if len(l2) > 9 else ""
+        nationality = l2[10:13].replace('<', '').strip()
+        dob_raw = l2[13:19]
+        dob_cd = l2[19] if len(l2) > 19 else ""
+        sex = l2[20] if len(l2) > 20 else "<"
+        doe_raw = l2[21:27]
+        doe_cd = l2[27] if len(l2) > 27 else ""
+        optional_data = l2[28:42].replace('<', '').strip()
+
+        res.update({
+            "format": "TD3 (Passeport)",
+            "document_type_category": "PASSPORT",
+            "document_type": doc_type or "P",
+            "document_number": doc_num,
+            "document_number_cd": doc_num_cd,
+            "issuing_country": issuing_country,
+            "nationality": nationality,
+            "date_of_birth": format_yymmdd(dob_raw, is_dob=True),
+            "date_of_birth_mrz": dob_raw,
+            "date_of_expiry": format_yymmdd(doe_raw, is_dob=False),
+            "date_of_expiry_mrz": doe_raw,
+            "sex": sex,
+            "nom_latin": nom_latin,
+            "prenoms_latin": prenom_latin,
+            "optional_data": optional_data
+        })
+
+    elif len(lines) >= 3 and len(lines[0]) == 30 and len(lines[1]) == 30:
+        # ==========================================================
+        # FORMAT TD1 : CARTE D'IDENTITÉ BIOMÉTRIQUE (3 lignes x 30 caractères)
+        # ==========================================================
+        l1, l2, l3 = lines[0], lines[1], lines[2]
+        doc_type = l1[0:2].replace('<', '').strip()
+        issuing_country = l1[2:5].replace('<', '').strip()
+        doc_num = l1[5:14].replace('<', '').strip()
+
         dob_raw = l2[0:6]
-        sex = l2[7]
+        sex = l2[7] if len(l2) > 7 else "<"
         doe_raw = l2[8:14]
         nationality = l2[15:18].replace('<', '').strip()
+        optional_data = l2[18:29].replace('<', '').strip()
 
-        # Formatage lisible des dates AAAA-MM-JJ
-        def format_yymmdd(yymmdd: str, is_dob: bool = False) -> str:
-            if len(yymmdd) == 6 and yymmdd.isdigit():
-                yy, mm, dd = int(yymmdd[:2]), int(yymmdd[2:4]), int(yymmdd[4:])
-                century = 1900 if (is_dob and yy > 30) else 2000
-                return f"{century + yy:04d}-{mm:02d}-{dd:02d}"
-            return yymmdd
-
-        # Nom et prénoms latins (3e ligne : NOM<<PRENOM)
         name_parts = l3.split('<<')
         nom_latin = name_parts[0].replace('<', ' ').strip()
         prenom_latin = " ".join(p.replace('<', ' ').strip() for p in name_parts[1:]).strip()
 
         res.update({
+            "format": "TD1 (Carte d'Identité)",
+            "document_type_category": "ID_CARD",
+            "document_type": doc_type or "I",
             "document_number": doc_num,
+            "issuing_country": issuing_country,
+            "nationality": nationality,
+            "date_of_birth": format_yymmdd(dob_raw, is_dob=True),
+            "date_of_birth_mrz": dob_raw,
+            "date_of_expiry": format_yymmdd(doe_raw, is_dob=False),
+            "date_of_expiry_mrz": doe_raw,
+            "sex": sex,
+            "nom_latin": nom_latin,
+            "prenoms_latin": prenom_latin,
+            "optional_data": optional_data
+        })
+
+    elif len(lines) == 2 and len(lines[0]) == 36:
+        # ==========================================================
+        # FORMAT TD2 : DOCUMENT INTERMÉDIAIRE / VISA (2 lignes x 36 caractères)
+        # ==========================================================
+        l1, l2 = lines[0], lines[1]
+        doc_type = l1[0:2].replace('<', '').strip()
+        issuing_country = l1[2:5].replace('<', '').strip()
+        name_parts = l1[5:36].split('<<')
+        nom_latin = name_parts[0].replace('<', ' ').strip()
+        prenom_latin = " ".join(p.replace('<', ' ').strip() for p in name_parts[1:]).strip()
+
+        doc_num = l2[0:9].replace('<', '').strip()
+        nationality = l2[10:13].replace('<', '').strip()
+        dob_raw = l2[13:19]
+        sex = l2[20] if len(l2) > 20 else "<"
+        doe_raw = l2[21:27]
+
+        res.update({
+            "format": "TD2 (Visa / Titre de Séjour)",
+            "document_type_category": "ID_CARD",
             "document_type": doc_type,
+            "document_number": doc_num,
             "issuing_country": issuing_country,
             "nationality": nationality,
             "date_of_birth": format_yymmdd(dob_raw, is_dob=True),
@@ -799,11 +924,12 @@ def get_unique_filename(base_path: str) -> str:
         counter += 1
 
 
-def extract_ef_dg2_photo(data: bytes, output_path: str = "photo.jpg", auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
+def extract_ef_dg2_photo(data: bytes, output_path: Optional[str] = None, auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
     """
     Extrait l'image biométrique faciale depuis EF.DG2 (FID 0102).
     Détecte automatiquement les formats JPEG (0xFF 0xD8 0xFF) ou JPEG 2000.
-    Enregistre l'image dans le fichier spécifié (avec auto-incrémentation si déjà existant).
+    Si output_path est fourni, enregistre l'image dans le fichier spécifié (avec auto-incrémentation).
+    Si output_path est None, aucun fichier n'est écrit sur disque (sécurité & confidentialité maximale).
     Si include_base64=True, inclut directement l'encodage Base64 en mémoire dans le résultat.
     """
     image_bytes = None
@@ -832,15 +958,19 @@ def extract_ef_dg2_photo(data: bytes, output_path: str = "photo.jpg", auto_incre
                 image_format = "JPEG2000 (Codestream)"
 
     if image_bytes:
-        final_path = get_unique_filename(output_path) if auto_increment else output_path
-        with open(final_path, "wb") as f:
-            f.write(image_bytes)
         result = {
             "format": image_format,
             "size_bytes": len(image_bytes),
-            "saved_path": os.path.abspath(final_path),
-            "filename": os.path.basename(final_path)
+            "saved_path": None,
+            "filename": None
         }
+        if output_path:
+            final_path = get_unique_filename(output_path) if auto_increment else output_path
+            with open(final_path, "wb") as f:
+                f.write(image_bytes)
+            result["saved_path"] = os.path.abspath(final_path)
+            result["filename"] = os.path.basename(final_path)
+
         if include_base64:
             result["base64"] = base64.b64encode(image_bytes).decode("ascii")
         return result
@@ -1067,11 +1197,12 @@ def parse_ef_dg12(data: bytes) -> Dict[str, Any]:
     return res
 
 
-def extract_ef_dg7_signature(data: bytes, output_path: str = "signature.jpg", auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
+def extract_ef_dg7_signature(data: bytes, output_path: Optional[str] = None, auto_increment: bool = True, include_base64: bool = False) -> Optional[Dict[str, Any]]:
     """
     Extrait l'image de la signature manuscrite numérisée du titulaire depuis EF.DG7 (FID 0107).
     Prend en charge JPEG, JPEG 2000, PNG ou Bitmap.
-    Enregistre l'image dans le fichier spécifié (avec auto-incrémentation si déjà existant).
+    Si output_path est fourni, enregistre l'image dans le fichier spécifié (avec auto-incrémentation).
+    Si output_path est None, aucun fichier n'est écrit sur disque (sécurité & confidentialité maximale).
     Si include_base64=True, inclut directement l'encodage Base64 en mémoire dans le résultat.
     """
     image_bytes = None
@@ -1104,15 +1235,19 @@ def extract_ef_dg7_signature(data: bytes, output_path: str = "signature.jpg", au
                     image_format = "PNG"
 
     if image_bytes:
-        final_path = get_unique_filename(output_path) if auto_increment else output_path
-        with open(final_path, "wb") as f:
-            f.write(image_bytes)
         result = {
             "format": image_format,
             "size_bytes": len(image_bytes),
-            "saved_path": os.path.abspath(final_path),
-            "filename": os.path.basename(final_path)
+            "saved_path": None,
+            "filename": None
         }
+        if output_path:
+            final_path = get_unique_filename(output_path) if auto_increment else output_path
+            with open(final_path, "wb") as f:
+                f.write(image_bytes)
+            result["saved_path"] = os.path.abspath(final_path)
+            result["filename"] = os.path.basename(final_path)
+
         if include_base64:
             result["base64"] = base64.b64encode(image_bytes).decode("ascii")
         return result
@@ -1211,7 +1346,35 @@ def run_self_tests() -> bool:
     unpadded = unpad_iso7816(padded)
     assert unpadded == b"HELLO"
 
-    print("[TEST OK] Tous les tests cryptographiques ICAO 9303 Part 11 sont validés avec succès !")
+    # Test décodage MRZ TD1 (Carte Nationale d'Identité - 90 octets)
+    td1_raw = (
+        "IDDZA1006896228<<<<<<<<<<<<<<<"
+        "9001015M3001018DZA<<<<<<<<<<<0"
+        "BENALI<<MOHAMED<<<<<<<<<<<<<<<"
+    )
+    td1_data = bytes.fromhex("615D5F1F5A") + td1_raw.encode('ascii')
+    td1_res = parse_ef_dg1(td1_data)
+    assert td1_res["document_type_category"] == "ID_CARD"
+    assert td1_res["document_number"] == "100689622"
+    assert td1_res["nom_latin"] == "BENALI"
+    assert td1_res["prenoms_latin"] == "MOHAMED"
+    assert td1_res["date_of_birth"] == "1990-01-01"
+
+    # Test décodage MRZ TD3 (Passeport Biométrique - 88 octets)
+    td3_line1 = "P<DZABENALI<<MOHAMED".ljust(44, '<')
+    td3_line2 = "1234567897DZA9001015M3001018".ljust(42, '<') + "02"
+    td3_data = bytes.fromhex("615B5F1F58") + (td3_line1 + td3_line2).encode('ascii')
+    td3_res = parse_ef_dg1(td3_data)
+    assert td3_res["document_type_category"] == "PASSPORT"
+    assert td3_res["document_number"] == "123456789"
+    assert td3_res["nom_latin"] == "BENALI"
+    assert td3_res["prenoms_latin"] == "MOHAMED"
+    assert td3_res["issuing_country"] == "DZA"
+    assert td3_res["nationality"] == "DZA"
+    assert td3_res["date_of_birth"] == "1990-01-01"
+    assert td3_res["date_of_expiry"] == "2030-01-01"
+
+    print("[TEST OK] Tous les tests cryptographiques et de formats MRZ (TD1/TD3) ICAO Doc 9303 sont validés avec succès !")
     return True
 
 
@@ -1224,8 +1387,8 @@ def read_cnibe_card(
     dob: str,
     doe: str,
     reader: Optional[str] = None,
-    photo_dest: str = "photo.jpg",
-    signature_dest: str = "signature.jpg",
+    photo_dest: Optional[str] = None,
+    signature_dest: Optional[str] = None,
     wait_seconds: int = 15,
     debug: bool = False,
     include_base64: bool = True
@@ -1469,13 +1632,17 @@ def read_cnibe_card(
 
         time.sleep(0.04)
 
-        # 4. Lecture EF.DG1 (FID 0101 - MRZ TD1)
-        print("[*] Lecture EF.DG1 (MRZ TD1 & Données d'identité)...")
+        # 4. Lecture EF.DG1 (FID 0101 - MRZ TD1 / TD3)
+        print("[*] Lecture EF.DG1 (MRZ & Données d'identité)...")
         ef_dg1_bytes = read_file_safe(bytes.fromhex("0101"), "EF.DG1")
         if ef_dg1_bytes:
             dg1_info = parse_ef_dg1(ef_dg1_bytes)
             result_data["dg1_mrz"] = dg1_info
-            print(f"[+] Données DG1 extraites avec succès.")
+            is_passport = (dg1_info.get("document_type_category") == "PASSPORT")
+            result_data["is_passport"] = is_passport
+            result_data["document_type"] = dg1_info.get("document_type", "P" if is_passport else "I")
+            result_data["document_format"] = dg1_info.get("format", "TD3 (Passeport)" if is_passport else "TD1 (Carte d'Identité)")
+            print(f"[+] Données DG1 extraites avec succès : {result_data['document_format']} ({dg1_info.get('issuing_country', '')}).")
 
         time.sleep(0.04)
 
@@ -1506,7 +1673,10 @@ def read_cnibe_card(
             photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest, auto_increment=True, include_base64=include_base64)
             if photo_info:
                 result_data["photo"] = photo_info
-                print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_info.get('filename', photo_dest)}")
+                if photo_info.get("filename"):
+                    print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_info['filename']}")
+                else:
+                    print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
         else:
             print("[!] Photo non extraite de DG2.")
 
@@ -1519,7 +1689,10 @@ def read_cnibe_card(
             sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest, auto_increment=True, include_base64=include_base64)
             if sig_info:
                 result_data["signature"] = sig_info
-                print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {sig_info.get('filename', signature_dest)}")
+                if sig_info.get("filename"):
+                    print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {sig_info['filename']}")
+                else:
+                    print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
 
         return result_data
 
@@ -1548,8 +1721,8 @@ def main():
     parser.add_argument("--dob", help="Date de Naissance (AAMMJJ, JJ/MM/AAAA ou AAAA-MM-JJ)")
     parser.add_argument("--doe", help="Date d'Expiration (AAMMJJ, JJ/MM/AAAA ou AAAA-MM-JJ)")
     parser.add_argument("--reader", default=None, help="Nom ou sous-chaîne du lecteur PC/SC à utiliser")
-    parser.add_argument("--photo", default="photo.jpg", help="Fichier de destination pour la photo (défaut: photo.jpg)")
-    parser.add_argument("--signature", default="signature.jpg", help="Fichier de destination pour la signature (défaut: signature.jpg)")
+    parser.add_argument("--photo", default=None, help="Fichier de destination pour la photo (optionnel, défaut: aucun fichier physique)")
+    parser.add_argument("--signature", default=None, help="Fichier de destination pour la signature (optionnel, défaut: aucun fichier physique)")
     parser.add_argument("--output", default=None, help="Fichier de sauvegarde du résultat JSON (optionnel)")
     parser.add_argument("--wait", type=int, default=15, help="Temps d'attente max de la carte en secondes (défaut: 15s)")
     parser.add_argument("--test-vectors", action="store_true", help="Exécuter les vecteurs de test mathématiques ICAO")

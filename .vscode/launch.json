@@ -5,7 +5,7 @@
             "name": "🚀 Agent Client Local (Port 5001)",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/cnibe_agent.py",
+            "program": "${workspaceFolder}/local/cnibe_agent.py",
             "console": "integratedTerminal",
             "justMyCode": true
         },
@@ -13,34 +13,10 @@
             "name": "🌐 Serveur Flask Minimal (Port 5000)",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/server_minimal.py",
+            "program": "${workspaceFolder}/serveur/server_minimal.py",
             "console": "integratedTerminal",
             "justMyCode": true,
             "jinja": true
-        },
-        {
-            "name": "🪪 Test Direct CLI (read_cnibe_safe.py)",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/read_cnibe_safe.py",
-            "args": [
-                "--doc", "106172516",
-                "--dob", "19/11/1957",
-                "--doe", "04/10/2027"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
-        },
-        {
-            "name": "🧪 Vecteurs de Test ICAO (read_cnibe_safe.py)",
-            "type": "debugpy",
-            "request": "launch",
-            "program": "${workspaceFolder}/read_cnibe_safe.py",
-            "args": [
-                "--test-vectors"
-            ],
-            "console": "integratedTerminal",
-            "justMyCode": true
         }
     ],
     "compounds": [
