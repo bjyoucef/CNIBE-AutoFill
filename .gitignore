@@ -21,6 +21,7 @@ signature*.jp2
 signature*.*
 test_saved_cards.json
 serveur/test_saved_cards.json
+tokens_cache.json
 *.log
 
 # Fichiers temporaires / backups

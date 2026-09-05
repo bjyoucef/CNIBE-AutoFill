@@ -1428,10 +1428,14 @@ def read_cnibe_card(
     signature_dest: Optional[str] = None,
     wait_seconds: int = 15,
     debug: bool = False,
-    include_base64: bool = True
+    include_base64: bool = False,
+    on_step: Optional[Any] = None,
+    read_photo: bool = False,
+    read_signature: bool = False
 ) -> Dict[str, Any]:
     """
     Lit une carte CNIBE de manière ultra-sécurisée et retourne les données extraites sous forme de dictionnaire.
+    Supporte un callback optionnel on_step(step_name, data) pour le streaming progressif en temps réel (SSE / Lazy).
     Lève une exception (SecurityException, CardConnectionException, etc.) en cas d'échec.
     """
     yymmdd_dob = normalize_date_to_yymmdd(dob)
@@ -1455,9 +1459,17 @@ def read_cnibe_card(
 
     guard = PassiveSafetyGuard()
 
+    def notify_step(step_name: str, payload: Optional[Dict[str, Any]] = None):
+        if on_step and callable(on_step):
+            try:
+                on_step(step_name, payload or {})
+            except Exception as _e_cb:
+                print(f"[!] Erreur callback on_step({step_name}): {_e_cb}", file=sys.stderr)
+
     # Sélection du lecteur
     target_reader = get_best_reader(reader)
     print(f"[*] Lecteur sélectionné : {target_reader}")
+    notify_step("waiting_for_card", {"reader": str(target_reader)})
 
     # Connexion à la carte
     connection = target_reader.createConnection()
@@ -1527,6 +1539,7 @@ def read_cnibe_card(
 
         atr = bytes(connection.getATR()).hex().upper()
         print(f"[*] Carte connectée. ATR : {atr}")
+        notify_step("card_connected", {"atr": atr, "reader": str(target_reader)})
         if in_transaction:
             print("[*] Canal PC/SC verrouillé en exclusivité (protection anti-interférence Windows active).")
         time.sleep(0.15)
@@ -1541,6 +1554,7 @@ def read_cnibe_card(
                 sm_session = perform_bac(connection, guard, doc_norm, yymmdd_dob, yymmdd_doe, debug=debug)
                 guard.bac_succeeded = True
                 print("[+] Authentification BAC réussie ! Canal Secure Messaging établi.")
+                notify_step("bac_authenticated", {"atr": atr})
                 break
             except (CardConnectionException, NoCardException) as e:
                 if bac_attempt == 0:
@@ -1703,35 +1717,49 @@ def read_cnibe_card(
             result_data["dg12_document"] = dg12_info
             print(f"[+] Données document DG12 extraites avec succès.")
 
-        time.sleep(0.04)
-
-        # 7. Lecture EF.DG2 (FID 0102 - Photo Biométrique)
-        print("[*] Lecture EF.DG2 (Photo faciale biométrique)...")
-        ef_dg2_bytes = read_file_safe(bytes.fromhex("0102"), "EF.DG2")
-        if ef_dg2_bytes:
-            photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest, auto_increment=True, include_base64=include_base64)
-            if photo_info:
-                result_data["photo"] = photo_info
-                if photo_info.get("filename"):
-                    print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_info['filename']}")
-                else:
-                    print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
-        else:
-            print("[!] Photo non extraite de DG2.")
+        # Notification immédiate : Toutes les données d'identité textuelles sont prêtes (en ~1s) !
+        notify_step("identity_ready", {
+            "dg1_mrz": result_data.get("dg1_mrz", {}),
+            "dg11_personnel": result_data.get("dg11_personnel", {}),
+            "dg12_document": result_data.get("dg12_document", {}),
+            "is_passport": result_data.get("is_passport", False),
+            "document_type": result_data.get("document_type", ""),
+            "document_format": result_data.get("document_format", ""),
+            "data_groups_disponibles": result_data.get("data_groups_disponibles", [])
+        })
 
         time.sleep(0.04)
 
-        # 8. Lecture EF.DG7 (FID 0107 - Signature Manuscrite Numérisée)
-        print("[*] Lecture EF.DG7 (Signature manuscrite numérisée)...")
-        ef_dg7_bytes = read_file_safe(bytes.fromhex("0107"), "EF.DG7")
-        if ef_dg7_bytes:
-            sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest, auto_increment=True, include_base64=include_base64)
-            if sig_info:
-                result_data["signature"] = sig_info
-                if sig_info.get("filename"):
-                    print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {sig_info['filename']}")
-                else:
-                    print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
+        # 7. Lecture EF.DG2 (FID 0102 - Photo Biométrique) - Désactivée par défaut pour accélérer la lecture
+        if read_photo or photo_dest:
+            print("[*] Lecture EF.DG2 (Photo faciale biométrique)...")
+            ef_dg2_bytes = read_file_safe(bytes.fromhex("0102"), "EF.DG2")
+            if ef_dg2_bytes:
+                photo_info = extract_ef_dg2_photo(ef_dg2_bytes, photo_dest, auto_increment=True, include_base64=include_base64)
+                if photo_info:
+                    result_data["photo"] = photo_info
+                    if photo_info.get("filename"):
+                        print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) -> {photo_info['filename']}")
+                    else:
+                        print(f"[+] Photo biométrique extraite ({photo_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
+                    notify_step("photo_ready", {"photo": photo_info})
+            else:
+                print("[!] Photo non extraite de DG2.")
+            time.sleep(0.04)
+
+        # 8. Lecture EF.DG7 (FID 0107 - Signature Manuscrite Numérisée) - Désactivée par défaut pour accélérer la lecture
+        if read_signature or signature_dest:
+            print("[*] Lecture EF.DG7 (Signature manuscrite numérisée)...")
+            ef_dg7_bytes = read_file_safe(bytes.fromhex("0107"), "EF.DG7")
+            if ef_dg7_bytes:
+                sig_info = extract_ef_dg7_signature(ef_dg7_bytes, signature_dest, auto_increment=True, include_base64=include_base64)
+                if sig_info:
+                    result_data["signature"] = sig_info
+                    if sig_info.get("filename"):
+                        print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) -> {sig_info['filename']}")
+                    else:
+                        print(f"[+] Signature manuscrite extraite ({sig_info['size_bytes']} octets) [Mémoire Base64, non sauvegardée sur disque]")
+                    notify_step("signature_ready", {"signature": sig_info})
 
         return result_data
 
@@ -1760,8 +1788,10 @@ def main():
     parser.add_argument("--dob", help="Date de Naissance (AAMMJJ, JJ/MM/AAAA ou AAAA-MM-JJ)")
     parser.add_argument("--doe", help="Date d'Expiration (AAMMJJ, JJ/MM/AAAA ou AAAA-MM-JJ)")
     parser.add_argument("--reader", default=None, help="Nom ou sous-chaîne du lecteur PC/SC à utiliser")
-    parser.add_argument("--photo", default=None, help="Fichier de destination pour la photo (optionnel, défaut: aucun fichier physique)")
-    parser.add_argument("--signature", default=None, help="Fichier de destination pour la signature (optionnel, défaut: aucun fichier physique)")
+    parser.add_argument("--photo", default=None, help="Fichier de destination pour la photo (active la lecture de EF.DG2)")
+    parser.add_argument("--signature", default=None, help="Fichier de destination pour la signature (active la lecture de EF.DG7)")
+    parser.add_argument("--with-photo", action="store_true", help="Activer la lecture de la photo biométrique EF.DG2")
+    parser.add_argument("--with-signature", action="store_true", help="Activer la lecture de la signature manuscrite EF.DG7")
     parser.add_argument("--output", default=None, help="Fichier de sauvegarde du résultat JSON (optionnel)")
     parser.add_argument("--wait", type=int, default=15, help="Temps d'attente max de la carte en secondes (défaut: 15s)")
     parser.add_argument("--test-vectors", action="store_true", help="Exécuter les vecteurs de test mathématiques ICAO")
@@ -1788,7 +1818,9 @@ def main():
             signature_dest=args.signature,
             wait_seconds=args.wait,
             debug=args.debug,
-            include_base64=False
+            include_base64=False,
+            read_photo=args.with_photo or bool(args.photo),
+            read_signature=args.with_signature or bool(args.signature)
         )
 
         # Affichage et export JSON

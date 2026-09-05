@@ -1,0 +1,203 @@
+{
+  "active_profile": "Formulaire Standard (Nom, Prénom, Date, Adresse)",
+  "countdown_seconds": 3,
+  "delay_between_fields_ms": 130,
+  "separator": "TAB",
+  "date_format": "DD/MM/YYYY",
+  "enable_ministere": true,
+  "sound_enabled": true,
+  "profiles": {
+    "Formulaire Standard (Nom, Prénom, Date, Adresse)": {
+      "description": "Modèle universel pour Word, Excel, formulaires web et logiciels de gestion",
+      "fields": [
+        {
+          "id": "nom_latin",
+          "label": "1. Nom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "prenom_latin",
+          "label": "2. Prénom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "date_naissance",
+          "label": "3. Date de naissance",
+          "enabled": true,
+          "format": "DD/MM/YYYY"
+        },
+        {
+          "id": "sexe",
+          "label": "4. Sexe",
+          "enabled": true
+        },
+        {
+          "id": "adresse",
+          "label": "5. Adresse",
+          "enabled": true
+        }
+      ]
+    },
+    "Dossier Patient / Médical (Depuis 'Civilité')": {
+      "description": "Cliquez dans le champ 'Civilité' de votre formulaire",
+      "fields": [
+        {
+          "id": "civilite",
+          "label": "1. Civilité (Menu déroulant : M, Mme, Mlle)",
+          "type": "select",
+          "enabled": true
+        },
+        {
+          "id": "sexe",
+          "label": "2. Sexe (Menu déroulant : Masculin, Féminin)",
+          "type": "select",
+          "enabled": true
+        },
+        {
+          "id": "nom_latin",
+          "label": "3. Nom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "prenom_latin",
+          "label": "4. Prénom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "date_naissance",
+          "label": "5. Date de naissance",
+          "enabled": true,
+          "format": "DD/MM/YYYY"
+        },
+        {
+          "id": "skip",
+          "label": "6. [SAUT] Sauter Âge (calculé)",
+          "enabled": true
+        },
+        {
+          "id": "skip",
+          "label": "7. [SAUT] Sauter Présumé",
+          "enabled": true
+        },
+        {
+          "id": "lieu_naissance",
+          "label": "8. Né(e) à (Lieu de naissance)",
+          "enabled": true
+        },
+        {
+          "id": "situation_familiale",
+          "label": "9. Situation (Menu déroulant : Célibataire...)",
+          "type": "select",
+          "enabled": true
+        },
+        {
+          "id": "skip",
+          "label": "10. [SAUT] Sauter Nom du père",
+          "enabled": true
+        },
+        {
+          "id": "skip",
+          "label": "11. [SAUT] Sauter Nom de la mère",
+          "enabled": true
+        },
+        {
+          "id": "adresse",
+          "label": "12. Adresse (Résidence)",
+          "enabled": true
+        }
+      ]
+    },
+    "Tableur Excel / Colonnes (Tabulation)": {
+      "description": "Remplissage d'une ligne de tableau Excel (N° Carte, NIN, Nom, Prénom, Date, Sexe, Adresse)",
+      "fields": [
+        {
+          "id": "num_document",
+          "label": "1. N° Carte",
+          "enabled": true
+        },
+        {
+          "id": "nin",
+          "label": "2. NIN (18 chiffres)",
+          "enabled": true
+        },
+        {
+          "id": "nom_latin",
+          "label": "3. Nom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "prenom_latin",
+          "label": "4. Prénom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "date_naissance",
+          "label": "5. Date de naissance",
+          "enabled": true,
+          "format": "DD/MM/YYYY"
+        },
+        {
+          "id": "sexe",
+          "label": "6. Sexe",
+          "enabled": true
+        },
+        {
+          "id": "groupe_sanguin",
+          "label": "7. Groupe Sanguin",
+          "enabled": true
+        },
+        {
+          "id": "adresse",
+          "label": "8. Adresse",
+          "enabled": true
+        }
+      ]
+    },
+    "Complet Bilingue (Français & Arabe)": {
+      "description": "Saisie complète en caractères latins et arabes pour administration et état-civil",
+      "fields": [
+        {
+          "id": "nom_latin",
+          "label": "1. Nom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "prenom_latin",
+          "label": "2. Prénom (Latin)",
+          "enabled": true
+        },
+        {
+          "id": "nom_arabe",
+          "label": "3. Nom (Arabe)",
+          "enabled": true
+        },
+        {
+          "id": "prenom_arabe",
+          "label": "4. Prénom (Arabe)",
+          "enabled": true
+        },
+        {
+          "id": "date_naissance",
+          "label": "5. Date de naissance",
+          "enabled": true,
+          "format": "DD/MM/YYYY"
+        },
+        {
+          "id": "lieu_naissance",
+          "label": "6. Né(e) à (Lieu)",
+          "enabled": true
+        },
+        {
+          "id": "nin",
+          "label": "7. NIN (18 chiffres)",
+          "enabled": true
+        },
+        {
+          "id": "adresse",
+          "label": "8. Adresse",
+          "enabled": true
+        }
+      ]
+    }
+  }
+}

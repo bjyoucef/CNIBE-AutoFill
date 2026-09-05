@@ -2,31 +2,20 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "🚀 Agent Client Local (Port 5001)",
+            "name": "⚡ CNIBE AutoFill (Remplisseur Clavier)",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/local/cnibe_agent.py",
+            "program": "${workspaceFolder}/cnibe_autofill_gui.py",
             "console": "integratedTerminal",
             "justMyCode": true
         },
         {
-            "name": "🌐 Serveur Flask Minimal (Port 5000)",
+            "name": "🔍 Diagnostic Lecteur & API Ministère",
             "type": "debugpy",
             "request": "launch",
-            "program": "${workspaceFolder}/serveur/server_minimal.py",
+            "program": "${workspaceFolder}/cnibe_agent.py",
             "console": "integratedTerminal",
-            "justMyCode": true,
-            "jinja": true
-        }
-    ],
-    "compounds": [
-        {
-            "name": "⚡ Lancer Tout (Serveur Flask + Agent Client)",
-            "configurations": [
-                "🚀 Agent Client Local (Port 5001)",
-                "🌐 Serveur Flask Minimal (Port 5000)"
-            ],
-            "stopAll": true
+            "justMyCode": true
         }
     ]
 }

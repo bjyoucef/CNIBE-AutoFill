@@ -1,11 +1,11 @@
 @echo off
 chcp 65001 >nul
-title CNIBE - Agent Client Local (Lecteur NFC)
-
+title CNIBE AutoFill - Émulateur Clavier
+ 
 echo ======================================================================
-echo    🛡️ CNIBE - AGENT CLIENT LOCAL (Passerelle PC/SC NFC)
+echo    🛡️ CNIBE AUTOFILL - REMPLISSEUR CLAVIER (KEYBOARD WEDGE)
 echo ======================================================================
-echo Ce script doit tourner en continu sur le PC où le lecteur NFC USB est branché.
+echo Ce script lance le remplisseur automatique de formulaires par frappe clavier.
 echo.
 
 cd /d "%~dp0"
@@ -41,13 +41,13 @@ if %errorlevel% neq 0 (
 )
 
 echo.
-echo [*] Lancement de l'agent client sur http://127.0.0.1:5001 ...
-echo [*] Vous pouvez maintenant ouvrir l'application web dans votre navigateur.
+echo [*] Lancement de CNIBE AutoFill (Remplisseur Clavier)...
 echo.
-%PY_CMD% cnibe_agent.py
+%PY_CMD% cnibe_autofill_gui.py
 
 if %errorlevel% neq 0 (
     echo.
-    echo [!] L'agent s'est arrêté avec une erreur.
+    echo [!] L'application s'est arrêtée avec une erreur.
     pause
 )
+

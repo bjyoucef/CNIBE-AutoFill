@@ -1,11 +1,12 @@
 @echo off
 chcp 65001 >nul
-title CNIBE - Serveur Web Central (Port 5000)
+title CNIBE AutoFill - Émulateur Clavier (Remplisseur de formulaires)
 
 echo ======================================================================
-echo    🌐 CNIBE - SERVEUR WEB FLASK CENTRAL (LAN)
+echo    🛡️ CNIBE AUTOFILL - REMPLISSEUR CLAVIER (KEYBOARD WEDGE)
 echo ======================================================================
-echo Ce script lance le serveur web central accessible par tous les clients du réseau local.
+echo Ce programme lit les cartes biométriques CNIBE et tape automatiquement
+echo les informations dans n'importe quel logiciel ouvert (Word, Excel, ERP...).
 echo.
 
 cd /d "%~dp0"
@@ -28,25 +29,20 @@ if %errorlevel% equ 0 (
 
 echo [*] Utilisation de Python : %PY_CMD%
 
-:: Vérification rapide du module Flask
-%PY_CMD% -c "import flask" >nul 2>&1
+:: Vérification rapide des modules indispensables
+%PY_CMD% -c "import smartcard; import Crypto; import PyQt6" >nul 2>&1
 if %errorlevel% neq 0 (
-    echo [*] Installation des dépendances Flask...
+    echo [*] Installation des dépendances requises (pyscard, pycryptodome, PyQt6)...
     %PY_CMD% -m pip install -r requirements.txt
     if %errorlevel% neq 0 (
-        echo [ERREUR] Échec de l'installation des dépendances serveur.
+        echo [ERREUR] Échec de l'installation des dépendances.
         pause
         exit /b 1
     )
 )
 
 echo.
-echo [*] Démarrage du serveur web sur 0.0.0.0:5000 ...
+echo [*] Démarrage de l'interface CNIBE AutoFill...
 echo.
-%PY_CMD% server_minimal.py
+start "" %PY_CMD% cnibe_autofill_gui.py
 
-if %errorlevel% neq 0 (
-    echo.
-    echo [!] Le serveur s'est arrêté avec une erreur.
-    pause
-)
