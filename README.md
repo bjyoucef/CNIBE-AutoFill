@@ -91,8 +91,8 @@ Tout lecteur de carte à puce sans contact **PC/SC USB standard** fonctionnant s
 ### Démarrage en 1 Clic (Sans configuration)
 1. Téléchargez ou clonez ce dépôt :
    ```bash
-   git clone https://github.com/bjyoucef/CNIBE-Reader.git
-   cd CNIBE-Reader
+   git clone https://github.com/bjyoucef/CNIBE-AutoFill.git
+   cd CNIBE-AutoFill
    ```
 2. Double-cliquez simplement sur :
    👉 **`lancer_remplisseur.bat`**
